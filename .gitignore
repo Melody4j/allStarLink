@@ -1,0 +1,66 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Build outputs
+allstarlink-dashboard/backend/target/
+allstarlink-dashboard/frontend/dist/
+allstarlink-dashboard/frontend/node_modules/
+
+# Logs
+logs/
+*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+allstarlink-dashboard/backend/src/main/resources/application.properties
+allstarlink-dashboard/backend/src/main/resources/application-dev.properties
+allstarlink-dashboard/backend/src/main/resources/application-prod.properties
+
+# Output files
+output/
+
+# Python virtual environments
+venv/
+.venv/
+
+# Maven files
+*.jar
+*.war
+*.ear
+.mvn/
+
+# NPM files
+*.npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Temporary files
+*.tmp
+*.temp
+*.cache
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Test reports
+jacoco.exec
+coverage/
+.nyc_output/
+
+# OS temporary files
+/tmp/
+/var/tmp/

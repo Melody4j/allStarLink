@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en" class="h-100">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Repeater Controller with VoIP linking for Ham Radio">
+<meta name="keywords" content="allstar, allstarlink, ham radio, repeaters, voip, app_rpt, asterisk">
+<meta name="author" content="AllStarLink Inc.">
+<title>Searchable Node List</title>
+<link rel="icon" href="/favicon.ico?v=2">
+
+<!-- == BOOTSTRAP 5 == -->
+<!-- https://www.jsdelivr.com/package/npm/bootstrap -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5/dist/css/bootstrap.min.css">
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- == jquery 3 == -->
+<!-- https://releases.jquery.com/ -->
+<script src="https://cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jquery.cookie@1/jquery.cookie.min.js"></script>
+
+<!-- == ASL Styling & Scripts -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-table@1/dist/bootstrap-table.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7/css/fontawesome.min.css"><link rel="stylesheet" type="text/css" href="/assets/css/allstar.css?v=1767743807"> <!-- has to be last -->
+
+
+<script src="https://cdn.jsdelivr.net/npm/tableexport.jquery.plugin@1/tableExport.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tableexport.jquery.plugin@1/libs/jsPDF/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap-table@1/dist/bootstrap-table.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap-table@1/dist/extensions/export/bootstrap-table-export.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7/js/all.min.js"></script>
+<script src="/assets/js/nodelist.js"></script>
+</head>
+
+<body class="d-flex flex-column h-100">
+
+<!-- embed the navbar here universally -->
+
+<header>
+<nav class="navbar navbar-expand-lg fixed-top asl-nav" aria-label="Manu Menu">
+  <div class="container-fluid">
+
+    <!-- Logo -->
+    <a class="navbar-brand" href="/"><img src="/assets/images/allstar-logo-small.png" alt="AllStarLink Logo"></a>
+
+    <!-- Responsive Hamburger (Three Line) Button -->
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+      data-bs-target="#ASLNavbar" aria-controls="ASLNavabar"
+      aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <!-- Menu Items Start Here -->
+    <div class="collapse navbar-collapse" id="ASLNavbar">
+      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        <!-- If the user is an admin, display the admin menu -->
+        
+        <!-- About -->
+        <li class="nav-item dropdown" id="about-menu">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">About</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="/about/about.php">AllStarLink Network</a></li>
+            <li><a class="dropdown-item" href="/about/donate.php">Donations</a></li>
+            <li><a class="dropdown-item" href="/about/terms.php">Our Terms of Use</a></li>
+            <li><a class="dropdown-item" href="/about/privacy.php">Privacy Policy</a></li>
+          </ul>
+        </li>
+
+        <!-- Help -->
+        <li class="nav-item"><a class="nav-link" href="/support">Help/Support</a></li>
+
+        <!-- Lists & Stats menu -->
+        <li class="nav-item dropdown" id="stats-menu">
+          <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">Lists &amp; Stats</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="/nodelist/">AllStarLink Node List</a></li>
+            <li><a class="dropdown-item" href="/starwars.php">Live Node Count</a></li>
+            <li><a class="dropdown-item" href="http://stats.allstarlink.org" target="_blank">Node Status and Maps</a></li>
+            <li><a class="dropdown-item" href="http://stats.allstarlink.org/maps/allstarNodesMapKey.php" target="_blank">Active (Keyed) NodeList</a></li>
+            <!-- <li><a href="/meta/new_req_month.php">New User & Node Graph</a></li> -->
+          </ul>
+        </li>
+
+        <!-- Portal menu -->
+        
+        <!-- Account menu -->
+        
+        <!-- Login/Sing Up -->
+                <li class="nav-item"><a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#login-modal">Login/Sign Up</a></li>
+        
+        <!-- Donorbox -->
+        <li class="nav-item">
+          <a class="nav-link"
+            style="background: url(https://donorbox.org/images/red_logo.png) no-repeat 37px;color: #000;text-decoration: none;font-family: Verdana,sans-serif;display: inline-block;padding-left: 75px;-webkit-border-radius: 2px;-moz-border-radius: 2px;border-radius: 2px;"
+            href="/about/donate.php">Donate</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+<!-- Login modal -->
+<div class="modal fade" id="login-modal" tabindex="-1" role="dialog">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header asl-modal-header">
+        <h5 class="modal-title">AllStarLink Account Login</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <form method="post" id="login-modal-form" action="/portal/login.php">
+          <div id="login-modal-failed" class="alert alert-danger text-center"
+            style="display:none" aria-hidden="true" role="alert">Login Attempt Failed</div>
+          <div class="mb-3">
+            <label for="asl-login-user" class="form-label">Callsign</label>
+            <input id="asl-login-user" class="form-control" type="text" name="user" placeholder="Callsign" autofocus required>
+          </div>
+          <div class="mb-3">
+            <label for="asl-login-pass" class="form-label">Password</label>
+            <input id="asl-login-pass" class="form-control" type="password" name="pass" placeholder="Password" required>
+          </div>
+
+          <button type="submit" class="btn btn-login text-white" name="login">Login</button>
+
+        </form>
+
+        <hr>
+
+        <div class="modal-reg-forgot">
+          <a href="/portal/register.php">Sign Up</a> | <a href="/portal/forgot-password.php">Forgot Password</a>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="modal fade" id="login-error-modal" tabindex="-1" role="dialog">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header asl-modal-header">
+        <h5 class="modal-title">AllStarLink Account Login</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning m-3 p-3 text-center" role="alert">
+          The username and password combination was not accepted.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</header>
+
+
+<main class="flex-shrink-0">
+
+<div class="container-fluid"><!-- Main Content -->
+<div class="container-flex">
+  <div class="row">
+
+    <div class="col-lg-4"></div>
+
+    <div class="col-lg-4 p-3 text-center">
+      <h2>Searchable Node List</h2>
+      <div class="form-text">Last seen within 180 days</div>
+    </div>
+
+    <div class="col-lg-4 border">
+      <div class="row">
+        <div class="col">
+          <i>Node Status</i><br>
+          <i class="fa-solid fa-signal" style="color:green"></i> - Online<br>
+          <i class="fa-solid fa-signal" style="color:grey"></i> - Offline<br>
+        </div>
+        <div class="col">
+          <i>Via Webtransceiver</i><br>
+          <i class="fa-solid fa-mobile-screen-button" style="color:green"></i> - Available<br>
+          <i class="fa-solid fa-mobile-screen-button" style="color:grey"></i> - Unavailable<br>
+          <i>Via Phone Portal</i><br>
+          <i class="fa-solid fa-phone" style="color:green"></i> - Available<br>
+          <i class="fa-solid fa-phone-slash" style="color:grey"></i> - Unavailable
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-4"></div>
+  </div>
+
+  <div class="row justify-content-center">
+    <div class="col-lg-12 text-center">
+      <!-- Bootstrap Tables -->
+      <table id="table" class="table table-sm table-striped"
+        data-toggle="table"
+        data-pagination="true"
+        data-pagination-v-align="both"
+        data-page-size="50"
+        data-page-list="[50, 100, 500]"
+        data-search="true"
+        data-search-highlight="true"
+        data-show-search-button="true"
+        data-search-on-enter-key="true"
+        data-show-search-button="true"
+        data-show-search-clear-button="true"
+        data-url="nodelist-server.php">
+        <thead>
+          <tr>
+            <th data-field="name" data-formatter="formatNode">Node #</th>
+            <th data-field="User_ID">Owner</th>
+            <th data-field="callsign">Callsign</th>
+            <th data-field="node_frequency">Freq</th>
+            <th data-field="node_tone">Tone</th>
+            <th data-field="Location">Location</th>
+            <th data-field="SiteName">Site</th>
+            <th data-field="Affiliation">Affiliation</th>
+            <th data-field="regseconds" data-formatter="formatRowDate">Last Seen</th>
+            <th data-field="Features" data-formatter="nodelistFeatures">Features</th>
+          </tr>
+        </thead>
+      </table>
+
+    </div>
+  </div>
+  
+<!-- This closes the div container followed by main in header.php -->
+</div>
+</main>
+
+
+<!-- footer -->
+<footer class="footer mt-auto py-1 asl-footer">
+  <div class="container">
+    <span>&copy; 2026 AllStarLink Inc.</span>
+		<span style="display:block; float: right;">This site is dedicated to the memory of Jim Dixon WB6NIL</span>
+	</div>
+</footer>
+
+</body>
+</html>
