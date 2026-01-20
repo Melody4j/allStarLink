@@ -45,36 +45,6 @@
         ORDER BY created_at DESC
     </select>
 
-    <!-- 根据位置查询节点 -->
-    <select id="selectByLocationContaining" resultMap="NodeResultMap">
-        SELECT * FROM nodes 
-        WHERE location LIKE CONCAT('%', #{location}, '%')
-        AND created_at > (
-            SELECT DATE_SUB(MAX(created_at), INTERVAL 2 MINUTE) FROM nodes
-        )
-        ORDER BY created_at DESC
-    </select>
-
-    <!-- 获取按位置分组的节点统计 -->
-    <select id="selectNodeStatsByLocation" resultType="java.util.Map">
-        SELECT 
-            location, 
-            COUNT(*) AS totalNodes, 
-            COUNT(CASE WHEN is_active = 1 THEN 1 END) AS activeNodes,
-            AVG(latitude) AS latitude, -- 添加平均纬度
-            AVG(longitude) AS longitude, -- 添加平均经度
-            1 AS isActive -- 添加is_active标志
-        FROM nodes
-        WHERE is_active = 1 -- 只统计在线节点
-        AND created_at > (
-            SELECT DATE_SUB(MAX(created_at), INTERVAL 2 MINUTE) FROM nodes
-        )
-        GROUP BY location
-        HAVING activeNodes > 0 -- 只返回有活跃节点的位置
-    </select>
-
-
-
     <!-- 根据地理范围查询节点 -->
     <select id="selectNodesByGeoBounds" resultMap="NodeResultMap">
         SELECT * FROM nodes 
