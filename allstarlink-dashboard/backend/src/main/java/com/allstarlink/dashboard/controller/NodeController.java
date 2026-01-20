@@ -47,12 +47,5 @@ public class NodeController {
         return ResponseEntity.ok(nodes);
     }
 
-    // 根据位置查询节点
-    @GetMapping("/search")
-    public ResponseEntity<List<Node>> searchNodesByLocation(@RequestParam String location) {
-        List<Node> nodes = nodeService.getNodesByLocation(location);
-        return ResponseEntity.ok(nodes);
-    }
-
 
 }

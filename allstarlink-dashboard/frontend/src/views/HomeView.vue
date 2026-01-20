@@ -76,20 +76,6 @@
         </div>
       </el-card>
     </div>
-
-    <!-- 统计图表 -->
-    <div class="charts-container">
-      <el-card shadow="hover" class="chart-card">
-        <template #header>
-          <div class="card-header">
-            <span>按国家节点统计</span>
-          </div>
-        </template>
-        <div class="chart-wrapper">
-          <v-chart :option="countryChartOption" autoresize />
-        </div>
-      </el-card>
-    </div>
   </div>
 </template>
 
@@ -97,32 +83,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import StatsCard from '../components/StatsCard.vue'
 import Amap from '../components/Amap.vue'
-import VChart from 'vue-echarts'
-import { use } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
-import { BarChart, PieChart } from 'echarts/charts'
-import {
-  TitleComponent,
-  TooltipComponent,
-  GridComponent,
-  DatasetComponent,
-  TransformComponent,
-  LegendComponent
-} from 'echarts/components'
-import { getGlobalStats, getNodeStatsByCountry, getAllNodes, getNodeStatsByLocation } from '../utils/api'
-
-// 注册 ECharts 组件
-use([
-  CanvasRenderer,
-  BarChart,
-  PieChart,
-  TitleComponent,
-  TooltipComponent,
-  GridComponent,
-  DatasetComponent,
-  TransformComponent,
-  LegendComponent
-])
+import { getGlobalStats, getAllNodes, getNodeStatsByLocation } from '../utils/api'
 
 // 全局统计数据
 const globalStats = reactive({
@@ -133,45 +94,12 @@ const globalStats = reactive({
 
 // 节点数据
 const nodes = ref([])
-// 国家统计数据
-const countryStats = ref([])
 // 位置统计数据，用于地图展示
 const locationStats = ref([])
 // 时间范围（小时）
 const timeRange = ref(1)
 // 自定义时间范围（小时）
 const customTimeRange = ref(24) // 默认24小时
-
-// 国家图表配置
-const countryChartOption = ref({
-  title: {
-    text: '节点分布（按国家）',
-    left: 'center'
-  },
-  tooltip: {
-    trigger: 'item',
-    formatter: '{b}: {c} ({d}%)'
-  },
-  legend: {
-    orient: 'vertical',
-    left: 'left'
-  },
-  series: [
-    {
-      name: '节点数',
-      type: 'pie',
-      radius: '50%',
-      data: [],
-      emphasis: {
-        itemStyle: {
-          shadowBlur: 10,
-          shadowOffsetX: 0,
-          shadowColor: 'rgba(0, 0, 0, 0.5)'
-        }
-      }
-    }
-  ]
-})
 
 
 
@@ -188,33 +116,18 @@ const countryChartOption = ref({
       console.log('实际全局统计数据:', actualStats)
       Object.assign(globalStats, actualStats)
 
-      // 获取国家统计
-      console.log('正在获取国家统计...')
-      const countryData = await getNodeStatsByCountry(timeRange.value)
-      console.log('获取国家统计成功，数据类型:', typeof countryData)
-      console.log('国家统计数据结构:', JSON.stringify(Object.keys(countryData)))
-      
-      // 检查数据格式 - 后端返回的是对象，包含value数组和Count字段
-      const actualCountryData = Array.isArray(countryData) ? countryData : countryData.value || []
-      console.log('实际国家数据类型:', typeof actualCountryData, '实际数据长度:', actualCountryData.length)
-      console.log('国家统计数据示例:', actualCountryData.slice(0, 5))
-      
-      countryStats.value = actualCountryData
-      updateCountryChart()
-      console.log('countryStats.value已更新，长度:', countryStats.value.length)
-
       // 获取位置统计数据，用于地图展示
       console.log('正在获取位置统计数据...')
       try {
         const locationData = await getNodeStatsByLocation(timeRange.value)
         console.log('获取位置统计数据成功，数据类型:', typeof locationData)
         console.log('位置统计数据完整内容:', locationData)
-        
+
         // 检查数据格式
         const actualLocationData = Array.isArray(locationData) ? locationData : locationData.value || []
         console.log('实际位置数据类型:', typeof actualLocationData, '实际数据长度:', actualLocationData.length)
         console.log('位置统计数据示例:', actualLocationData.slice(0, 5))
-        
+
         locationStats.value = actualLocationData
         console.log('locationStats.value已更新，长度:', locationStats.value.length)
       } catch (error) {
@@ -234,17 +147,6 @@ const countryChartOption = ref({
       console.error('错误详情:', error.response)
     }
   }
-
-// 更新国家图表
-const updateCountryChart = () => {
-  const pieData = countryStats.value
-    .map(item => ({
-      name: item.country || '未知',
-      value: item.totalNodes
-    }))
-  
-  countryChartOption.value.series[0].data = pieData
-}
 
 
 
@@ -299,21 +201,6 @@ onMounted(() => {
 .map-container {
   margin-bottom: 20px;
   height: 600px;
-}
-
-/* 图表容器 */
-.charts-container {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
-  gap: 20px;
-}
-
-.chart-card {
-  height: 400px;
-}
-
-.chart-wrapper {
-  height: calc(100% - 44px); /* 减去卡片头部高度 */
 }
 
 /* 时间范围选择器 */

@@ -23,18 +23,6 @@ public interface NodeMapper extends BaseMapper<Node> {
     // 获取所有活跃节点
     List<Node> selectActiveNodes(@Param("timeThreshold") LocalDateTime timeThreshold);
 
-    // 根据位置查询节点
-    List<Node> selectByLocationContaining(@Param("location") String location);
-
-    // 获取按位置分组的节点统计
-    List<Map<String, Object>> selectNodeStatsByLocation(@Param("timeThreshold") LocalDateTime timeThreshold);
-
-
-
-    // 根据地理范围查询节点
-    List<Node> selectNodesByGeoBounds(@Param("minLat") double minLat, @Param("maxLat") double maxLat,
-                                     @Param("minLon") double minLon, @Param("maxLon") double maxLon);
-
     // 获取节点总数
     long count();
 

@@ -26,18 +26,9 @@ public class NodeStatsController {
 
     // 获取所有在线节点详情（用于地图显示）
     @GetMapping("/location")
-    public ResponseEntity<List<Node>> getNodeStatsByLocation(
-            @RequestParam(defaultValue = "1") int timeThresholdHours) {
+    public ResponseEntity<List<Node>> getNodeStatsByLocation() {
         // 返回所有在线节点的详细信息，而不是按位置分组
         List<Node> activeNodes = nodeService.getActiveNodes();
         return ResponseEntity.ok(activeNodes);
-    }
-
-    // 获取按国家分组的节点统计
-    @GetMapping("/country")
-    public ResponseEntity<List<Map<String, Object>>> getNodeStatsByCountry(
-            @RequestParam(defaultValue = "1") int timeThresholdHours) {
-        List<Map<String, Object>> stats = nodeService.getNodeStatsByCountry(timeThresholdHours);
-        return ResponseEntity.ok(stats);
     }
 }
