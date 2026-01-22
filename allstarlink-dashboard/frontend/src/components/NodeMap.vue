@@ -45,7 +45,6 @@
 import { ref, onMounted, watch, nextTick } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { geocodeLocation } from '../utils/api'
 
 // 组件属性
 const props = defineProps({
@@ -131,16 +130,8 @@ const addNodeMarker = async (node) => {
     let latLng
     if (node.latitude && node.longitude) {
       latLng = [node.latitude, node.longitude]
-    } else {
-      // 否则尝试地理编码
-      const result = await geocodeLocation(node.location)
-      if (result.data && result.data.length > 0) {
-        latLng = [parseFloat(result.data[0].lat), parseFloat(result.data[0].lon)]
-      } else {
-        return // 无法获取经纬度
-      }
-    }
-    
+    } 
+
     // 创建标记
     const marker = L.marker(latLng, {
       icon: getNodeIcon(node.isActive),

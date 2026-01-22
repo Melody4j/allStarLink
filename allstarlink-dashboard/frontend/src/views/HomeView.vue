@@ -1,206 +1,253 @@
 <template>
   <div class="home-container">
-    <h1>测试文本：页面应该可以显示这个标题</h1>
-    <h2 class="page-title">AllStarLink节点仪表盘</h2>
+    <h1 style="color: green; margin-bottom: 10px;">✓ AllStarLink 节点仪表盘</h1>
+    <p><strong>加载状态:</strong> <span :style="{color: loadingStatus.includes('✗') ? 'red' : 'green'}">{{ loadingStatus }}</span></p>
     
+    <!-- 时间范围选择 -->
+    <div class="time-range-selector">
+      <label>时间范围:</label>
+      <el-select
+        v-model="timeRange"
+        placeholder="选择时间范围"
+        size="small"
+        @change="handleTimeRangeChange"
+        style="width: 200px; margin-left: 10px;"
+      >
+        <el-option label="最近1小时" value="1" />
+        <el-option label="最近24小时" value="24" />
+        <el-option label="最近3天" value="72" />
+        <el-option label="最近7天" value="168" />
+      </el-select>
+    </div>
+
     <!-- 统计卡片 -->
     <div class="stats-cards">
       <stats-card 
         title="总节点数" 
-        :count="globalStats.totalNodes" 
+        :count="globalStats.totalNodes || 0" 
         icon="el-icon-data-line"
         color="#409EFF"
       />
       <stats-card 
         title="活跃节点数" 
-        :count="globalStats.activeNodes" 
+        :count="globalStats.activeNodes || 0" 
         icon="el-icon-video-camera"
         color="#67C23A"
       />
       <stats-card 
         title="活跃比例" 
-        :count="globalStats.activePercentage" 
+        :count="globalStats.activePercentage || 0" 
         icon="el-icon-circle-check"
         color="#E6A23C"
         :is-percentage="true"
       />
       <stats-card 
-        title="统计时间范围" 
-        :count="timeRange" 
+        title="统计时间" 
+        :count="parseInt(timeRange) || 1" 
         icon="el-icon-time"
         color="#F56C6C"
         suffix="小时"
       />
     </div>
 
-    <!-- 时间范围选择 -->
-    <div class="time-range-selector">
-      <el-select
-        v-model="timeRange"
-        placeholder="选择时间范围"
-        size="small"
-        @change="handleTimeRangeChange"
-      >
-        <el-option label="最近1小时" value="1" />
-        <el-option label="最近24小时" value="24" />
-        <el-option label="最近3天" value="72" />
-        <el-option label="最近7天" value="168" />
-        <el-option label="自定义..." value="custom" />
-      </el-select>
-      
-      <!-- 自定义时间范围输入 -->
-      <div v-if="timeRange === 'custom'" class="custom-time-input">
-        <el-input-number
-          v-model="customTimeRange"
-          :min="1"
-          :max="8760"
-          size="small"
-          placeholder="请输入小时数"
-        ></el-input-number>
-        <el-button type="primary" size="small" @click="handleCustomTimeApply">
-          应用
-        </el-button>
-      </div>
-    </div>
-
-    <!-- 地图区域（使用高德地图） -->
-    <div class="map-container">
+    <!-- 地图区域 -->
+    <div class="map-container" v-if="true">
       <el-card shadow="hover" style="height: 100%; display: flex; flex-direction: column;">
         <template #header>
           <div class="card-header">
             <span>节点分布地图</span>
           </div>
         </template>
-        <div style="flex: 1;">
+        <div style="flex: 1; overflow: hidden;">
           <amap :location-stats="locationStats" style="width: 100%; height: 100%;" />
         </div>
       </el-card>
+    </div>
+
+    <!-- 数据预览 -->
+    <div style="margin-top: 20px; background: #f5f7fa; padding: 20px; border-radius: 4px;">
+      <h3>全局统计数据</h3>
+      <pre>{{ JSON.stringify(globalStats, null, 2) }}</pre>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import StatsCard from '../components/StatsCard.vue'
 import Amap from '../components/Amap.vue'
-import { getGlobalStats, getAllNodes, getNodeStatsByLocation } from '../utils/api'
+import { getGlobalStats, getAllNodes, getActiveNodes, getNodeStatsByLocation, getLimitedActiveNodes } from '../utils/api'
 
 // 全局统计数据
 const globalStats = reactive({
   totalNodes: 0,
   activeNodes: 0,
-  activePercentage: 0
+  activePercentage: 0,
+  timestamp: ''
 })
+
+// 加载状态
+const loadingStatus = ref('初始化中...')
 
 // 节点数据
 const nodes = ref([])
-// 位置统计数据，用于地图展示
+
+// 位置统计数据
 const locationStats = ref([])
+
 // 时间范围（小时）
-const timeRange = ref(1)
-// 自定义时间范围（小时）
-const customTimeRange = ref(24) // 默认24小时
+const timeRange = ref('1')
 
-
-
-// 获取数据
-  const fetchData = async () => {
-    try {
-      console.log('开始获取数据...')
-      // 获取全局统计
-      console.log('正在获取全局统计...')
-      const stats = await getGlobalStats(timeRange.value)
-      console.log('获取全局统计成功，数据类型:', typeof stats)
-      // 检查数据格式 - 如果是对象，直接使用；如果是包含value字段的对象，使用value
-      const actualStats = stats.value ? stats.value : stats
-      console.log('实际全局统计数据:', actualStats)
-      Object.assign(globalStats, actualStats)
-
-      // 获取位置统计数据，用于地图展示
-      console.log('正在获取位置统计数据...')
-      try {
-        const locationData = await getNodeStatsByLocation(timeRange.value)
-        console.log('获取位置统计数据成功，数据类型:', typeof locationData)
-        console.log('位置统计数据完整内容:', locationData)
-
-        // 检查数据格式
-        const actualLocationData = Array.isArray(locationData) ? locationData : locationData.value || []
-        console.log('实际位置数据类型:', typeof actualLocationData, '实际数据长度:', actualLocationData.length)
-        console.log('位置统计数据示例:', actualLocationData.slice(0, 5))
-
-        locationStats.value = actualLocationData
-        console.log('locationStats.value已更新，长度:', locationStats.value.length)
-      } catch (error) {
-        console.error('获取位置统计数据失败:', error)
-        console.error('错误详情:', error.response)
-      }
-
-      // 获取所有节点数据 - 只获取前100条用于展示，避免数据量太大
-      console.log('正在获取所有节点数据...')
-      const allNodes = await getAllNodes()
-      nodes.value = allNodes.slice(0, 100) // 只获取前100条
-      console.log('获取所有节点数据成功，已过滤为前100条用于展示')
-
-      console.log('数据获取完成')
-    } catch (error) {
-      console.error('获取数据失败:', error)
-      console.error('错误详情:', error.response)
+// 获取全局统计数据
+const fetchGlobalStats = async () => {
+  try {
+    loadingStatus.value = '正在加载全局统计...'
+    console.log('[API] 获取全局统计，timeRange:', parseInt(timeRange.value))
+    
+    const stats = await getGlobalStats(parseInt(timeRange.value))
+    console.log('[API] 全局统计数据:', stats)
+    
+    if (stats) {
+      Object.assign(globalStats, stats)
+      console.log('[Data] globalStats已更新:', globalStats)
     }
-  }
-
-
-
-// 处理时间范围变化
-const handleTimeRangeChange = () => {
-  // 如果选择的是预设值（不是custom），直接重新获取数据
-  if (timeRange.value !== 'custom') {
-    fetchData()
+    
+    loadingStatus.value = '✓ 全局统计加载完成'
+  } catch (error) {
+    console.error('[Error] 获取全局统计失败:', error)
+    loadingStatus.value = '✗ 全局统计加载失败: ' + error.message
   }
 }
 
-// 应用自定义时间范围
-const handleCustomTimeApply = () => {
-  if (customTimeRange.value && customTimeRange.value >= 1 && customTimeRange.value <= 8760) {
-    // 将自定义时间范围转换为字符串，确保类型一致
-    timeRange.value = customTimeRange.value.toString()
-    fetchData()
-  } else {
-    // 如果输入无效，重置到默认值
-    customTimeRange.value = 24
-    timeRange.value = 'custom'
+// 获取位置统计数据（恢复真实API，处理海外坐标）
+const fetchLocationStats = async () => {
+  try {
+    loadingStatus.value = '正在加载位置数据...'
+    console.log('[API] 获取活跃节点用于地图显示')
+
+    // 使用真实的活跃节点API
+    const data = await getActiveNodes()
+    console.log('[API] 活跃节点数据长度:', data?.length)
+
+    if (data) {
+      // 不限制节点数量，让地图组件根据用户选择决定显示多少
+      let limitedData = Array.isArray(data) ? data : []
+
+      // 过滤和处理节点数据
+      console.log('[DEBUG] 原始数据前3个节点:', limitedData.slice(0, 3))
+
+      limitedData = limitedData.filter(node => {
+        const hasCoords = node.latitude && node.longitude &&
+               node.latitude !== null && node.longitude !== null
+        const hasLocation = node.location && node.location.trim() !== ''
+
+        console.log(`[FILTER] 节点 ${node.nodeId}: 有坐标=${hasCoords}, 有位置=${hasLocation}`,
+          {lat: node.latitude, lng: node.longitude, location: node.location})
+
+        return hasCoords && hasLocation
+      })
+
+      console.log('[DEBUG] 过滤后节点数量:', limitedData.length)
+
+      // 暂时不做坐标映射，直接显示原始坐标
+      limitedData = limitedData.map(node => {
+        console.log(`[COORD] 节点 ${node.nodeId} 坐标: ${node.latitude}, ${node.longitude}`)
+        return {
+          ...node,
+          originalLatitude: node.latitude,
+          originalLongitude: node.longitude
+        }
+      })
+
+      locationStats.value = limitedData
+      console.log('[Data] 处理后的节点数量:', locationStats.value.length)
+      console.log('[Data] 示例节点:', limitedData[0])
+    }
+
+    loadingStatus.value = '✓ 位置数据加载完成'
+  } catch (error) {
+    console.error('[Error] 获取位置数据失败:', error)
+    loadingStatus.value = '✗ 位置数据加载失败: ' + error.message
+
+    // 如果API失败，回退到测试数据
+    console.log('[FALLBACK] 使用备用测试数据')
+    locationStats.value = [
+      {
+        nodeId: 12345,
+        location: "北京市 (测试)",
+        latitude: 39.9042,
+        longitude: 116.4074,
+        isActive: true,
+        callsign: "TEST1",
+        owner: "Test User 1"
+      }
+    ]
   }
+}
+
+// 获取所有节点
+const fetchAllNodes = async () => {
+  try {
+    loadingStatus.value = '正在加载节点列表...'
+    console.log('[API] 获取所有节点')
+    
+    const data = await getAllNodes()
+    console.log('[API] 节点列表数据长度:', data?.length)
+    
+    if (data) {
+      nodes.value = Array.isArray(data) ? data : []
+      console.log('[Data] nodes已更新，长度:', nodes.value.length)
+    }
+    
+    loadingStatus.value = '✓ 所有数据加载完成'
+  } catch (error) {
+    console.error('[Error] 获取节点列表失败:', error)
+    loadingStatus.value = '✗ 数据加载完成（部分数据失败）'
+  }
+}
+
+// 获取所有数据
+const fetchData = async () => {
+  try {
+    console.log('[Load] 开始加载所有数据，timeRange:', timeRange.value)
+    
+    // 并行获取数据
+    await Promise.all([
+      fetchGlobalStats(),
+      fetchLocationStats(),
+      fetchAllNodes()
+    ])
+    
+    console.log('[Load] 所有数据加载完成')
+    loadingStatus.value = '✓ 加载完成'
+  } catch (error) {
+    console.error('[Error] 数据加载出错:', error)
+    loadingStatus.value = '✗ 数据加载失败'
+  }
+}
+
+// 处理时间范围变化
+const handleTimeRangeChange = () => {
+  console.log('[Event] 时间范围变化:', timeRange.value)
+  fetchData()
 }
 
 // 页面加载时获取数据
 onMounted(() => {
-  console.log('HomeView mounted, fetching data...')
+  console.log('[Mount] HomeView已挂载，开始获取初始数据')
   fetchData()
 })
 </script>
 
 <style scoped>
 .home-container {
-  padding: 0 20px;
+  padding: 20px;
 }
 
 .page-title {
   font-size: 24px;
   margin-bottom: 20px;
   color: #303133;
-}
-
-/* 统计卡片 */
-.stats-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 20px;
-  margin-bottom: 20px;
-}
-
-/* 地图容器 */
-.map-container {
-  margin-bottom: 20px;
-  height: 600px;
 }
 
 /* 时间范围选择器 */
@@ -211,23 +258,53 @@ onMounted(() => {
   border-radius: 8px;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
+  margin-bottom: 20px;
 }
 
-.custom-time-input {
+/* 统计卡片容器 */
+.stats-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+/* 地图容器 */
+.map-container {
+  margin-bottom: 20px;
+  height: 600px;
+}
+
+/* 卡片样式 */
+.card-header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 10px;
+}
+
+h1 {
+  margin-bottom: 10px;
+  margin-top: 0;
+  font-size: 28px;
+}
+
+h3 {
+  margin-top: 0;
+  color: #303133;
+}
+
+pre {
+  background-color: #f5f5f5;
+  padding: 15px;
+  border-radius: 4px;
+  overflow-x: auto;
+  max-height: 300px;
+  font-size: 12px;
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
   .stats-cards {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  }
-  
-  .charts-container {
     grid-template-columns: 1fr;
   }
   
@@ -240,8 +317,8 @@ onMounted(() => {
     align-items: flex-start;
   }
   
-  .custom-time-input {
-    width: 100%;
+  h1 {
+    font-size: 20px;
   }
 }
 </style>

@@ -3,7 +3,7 @@ import axios from 'axios'
 // 创建axios实例
 const apiClient = axios.create({
   baseURL: '/api',
-  timeout: 10000,
+  timeout: 30000, // 增加超时时间到30秒
   headers: {
     'Content-Type': 'application/json'
   }
@@ -43,6 +43,11 @@ export const getNodesByPage = (pageNum = 1, pageSize = 20) => {
 // 获取所有活跃节点
 export const getActiveNodes = () => {
   return apiClient.get('/nodes/active')
+}
+
+// 获取限定数量的活跃节点（用于地图优化）
+export const getLimitedActiveNodes = (limit = 500, sortBy = 'nodeId') => {
+  return apiClient.get(`/nodes/active/limited?limit=${limit}&sortBy=${sortBy}`)
 }
 
 // 根据节点ID获取节点

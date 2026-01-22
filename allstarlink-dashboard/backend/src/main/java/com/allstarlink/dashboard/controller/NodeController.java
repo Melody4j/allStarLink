@@ -47,5 +47,14 @@ public class NodeController {
         return ResponseEntity.ok(nodes);
     }
 
+    // 获取限定数量的活跃节点（用于地图显示优化）
+    @GetMapping("/active/limited")
+    public ResponseEntity<List<Node>> getLimitedActiveNodes(
+            @RequestParam(defaultValue = "500") int limit,
+            @RequestParam(defaultValue = "nodeId") String sortBy) {
+        List<Node> nodes = nodeService.getLimitedActiveNodes(limit, sortBy);
+        return ResponseEntity.ok(nodes);
+    }
+
 
 }

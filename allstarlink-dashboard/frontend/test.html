@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Test</title>
+</head>
+<body>
+  <h1>前端服务器工作正常！</h1>
+  <p>时间: <span id="time"></span></p>
+  <p>API测试:</p>
+  <button onclick="testAPI()">测试API</button>
+  <div id="result"></div>
+  
+  <script>
+    document.getElementById('time').innerText = new Date().toLocaleString();
+    
+    function testAPI() {
+      fetch('/api/stats/global?timeThresholdHours=1')
+        .then(r => r.json())
+        .then(d => {
+          document.getElementById('result').innerText = JSON.stringify(d, null, 2);
+        })
+        .catch(e => {
+          document.getElementById('result').innerText = '错误: ' + e.message;
+        });
+    }
+  </script>
+</body>
+</html>

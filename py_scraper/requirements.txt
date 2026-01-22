@@ -1,3 +1,7 @@
 schedule
 requests
 pymysql
+pandas
+numpy
+sqlalchemy
+geopy
