@@ -1,7 +1,6 @@
 package com.allstarlink.dashboard.controller;
 
 import com.allstarlink.dashboard.service.CacheManagerService;
-import com.allstarlink.dashboard.service.NodeService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -21,7 +20,6 @@ import java.util.Map;
 public class CacheController {
 
     private final CacheManagerService cacheManagerService;
-    private final NodeService nodeService;
 
     /**
      * 手动清除所有节点缓存
@@ -31,16 +29,7 @@ public class CacheController {
         log.info("收到清除节点缓存请求");
         Map<String, Object> result = new HashMap<>();
 
-        try {
-            nodeService.clearAllNodeCache();
-            result.put("success", true);
-            result.put("message", "节点缓存清除成功");
-            log.info("节点缓存清除成功");
-        } catch (Exception e) {
-            result.put("success", false);
-            result.put("message", "节点缓存清除失败: " + e.getMessage());
-            log.error("节点缓存清除失败", e);
-        }
+
 
         return ResponseEntity.ok(result);
     }
@@ -53,16 +42,6 @@ public class CacheController {
         log.info("收到清除单个节点缓存请求: nodeId={}", nodeId);
         Map<String, Object> result = new HashMap<>();
 
-        try {
-            nodeService.clearNodeCache(nodeId);
-            result.put("success", true);
-            result.put("message", "节点 " + nodeId + " 缓存清除成功");
-            log.info("节点 {} 缓存清除成功", nodeId);
-        } catch (Exception e) {
-            result.put("success", false);
-            result.put("message", "节点缓存清除失败: " + e.getMessage());
-            log.error("节点 {} 缓存清除失败", nodeId, e);
-        }
 
         return ResponseEntity.ok(result);
     }

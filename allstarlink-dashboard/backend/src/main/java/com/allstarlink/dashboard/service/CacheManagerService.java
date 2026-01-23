@@ -18,27 +18,7 @@ import java.util.Set;
 public class CacheManagerService {
 
     private final RedisTemplate<String, Object> redisTemplate;
-    private final NodeService nodeService;
 
-    /**
-     * 定时清理节点缓存
-     * 每2分钟执行一次，与节点数据更新周期同步
-     */
-    @Scheduled(fixedRate = 120000) // 2分钟 = 120000毫秒
-    public void clearNodeCacheScheduled() {
-        log.info("定时清理节点缓存开始");
-        try {
-            // 清除所有节点相关的缓存
-            nodeService.clearAllNodeCache();
-
-            // 统计当前缓存数量
-            logCacheStats();
-
-            log.info("定时清理节点缓存完成");
-        } catch (Exception e) {
-            log.error("定时清理节点缓存失败", e);
-        }
-    }
 
     /**
      * 手动清理所有缓存
@@ -87,22 +67,7 @@ public class CacheManagerService {
      * 在应用启动时或缓存清理后预加载常用数据
      */
     public void warmUpCache() {
-        log.info("开始预热缓存");
-        try {
-            // 预加载全局统计数据
-            nodeService.getGlobalStats(1);
-            nodeService.getGlobalStats(24);
 
-            // 预加载活跃节点（最常访问的数据）
-            nodeService.getActiveNodes();
-
-            // 预加载第一页节点数据
-            nodeService.getNodesByPage(1, 20);
-
-            log.info("缓存预热完成");
-        } catch (Exception e) {
-            log.error("缓存预热失败", e);
-        }
     }
 
     /**

@@ -7,7 +7,10 @@ import lombok.NoArgsConstructor;
 
 /**
  * 通用返回结果类
+ * 遵循阿里巴巴开发手册规范，统一API返回结构
+ *
  * @param <T> 返回数据的类型
+ * @author AllStarLink Dashboard
  */
 @Data
 @NoArgsConstructor
