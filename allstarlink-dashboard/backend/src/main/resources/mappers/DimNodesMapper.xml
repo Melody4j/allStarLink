@@ -1,0 +1,367 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.allstarlink.dashboard.mapper.DimNodesMapper">
+
+    <!-- 结果映射 -->
+    <resultMap id="DimNodesResultMap" type="com.allstarlink.dashboard.entity.DimNodes">
+        <id property="nodeId" column="node_id" />
+        <result property="callsign" column="callsign" />
+        <result property="owner" column="owner" />
+        <result property="affiliation" column="affiliation" />
+        <result property="affiliationType" column="affiliation_type" />
+        <result property="country" column="country" />
+        <result property="continent" column="continent" />
+        <result property="isActive" column="is_active" />
+        <result property="lastSeen" column="last_seen" />
+        <result property="nodeRank" column="node_rank" />
+        <result property="mobilityType" column="mobility_type" />
+        <result property="firstSeenAt" column="first_seen_at" />
+        <result property="updateTime" column="update_time" />
+        <result property="latitude" column="latitude" />
+        <result property="longitude" column="longitude" />
+        <result property="isMobile" column="is_mobile" />
+    </resultMap>
+
+    <!-- 根据节点ID获取节点维度信息 -->
+    <select id="selectByNodeId" resultMap="DimNodesResultMap">
+        SELECT * FROM dim_nodes WHERE node_id = #{nodeId}
+    </select>
+
+    <!-- 获取所有活跃节点 -->
+    <select id="selectActiveNodes" resultMap="DimNodesResultMap">
+        SELECT * FROM dim_nodes
+        WHERE is_active = 1
+        ORDER BY update_time DESC
+    </select>
+
+    <!-- 根据组织类型查询节点 -->
+    <select id="selectByAffiliationType" resultMap="DimNodesResultMap">
+        SELECT * FROM dim_nodes
+        WHERE affiliation_type = #{affiliationType}
+        ORDER BY update_time DESC
+    </select>
+
+    <!-- 根据国家查询节点 -->
+    <select id="selectByCountry" resultMap="DimNodesResultMap">
+        SELECT * FROM dim_nodes
+        WHERE country = #{country}
+        ORDER BY update_time DESC
+    </select>
+
+    <!-- 根据节点等级查询节点 -->
+    <select id="selectByNodeRank" resultMap="DimNodesResultMap">
+        SELECT * FROM dim_nodes
+        WHERE node_rank = #{nodeRank}
+        ORDER BY update_time DESC
+    </select>
+
+    <!-- 根据移动属性查询节点 -->
+    <select id="selectByMobilityType" resultMap="DimNodesResultMap">
+        SELECT * FROM dim_nodes
+        WHERE mobility_type = #{mobilityType}
+        ORDER BY update_time DESC
+    </select>
+
+    <!-- 根据地理范围查询节点 -->
+    <select id="selectByGeoBounds" resultMap="DimNodesResultMap">
+        SELECT * FROM dim_nodes
+        WHERE latitude BETWEEN #{minLat} AND #{maxLat}
+        AND longitude BETWEEN #{minLon} AND #{maxLon}
+        AND latitude IS NOT NULL
+        AND longitude IS NOT NULL
+        ORDER BY update_time DESC
+    </select>
+
+    <!-- 查询移动节点 -->
+    <select id="selectMobileNodes" resultMap="DimNodesResultMap">
+        SELECT * FROM dim_nodes
+        WHERE is_mobile = 1
+        ORDER BY update_time DESC
+    </select>
+
+    <!-- 查询指定时间后首次入网的节点 -->
+    <select id="selectNodesFirstSeenAfter" resultMap="DimNodesResultMap">
+        SELECT * FROM dim_nodes
+        WHERE first_seen_at > #{firstSeenAfter}
+        ORDER BY first_seen_at DESC
+    </select>
+
+    <!-- 统计活跃节点数量 -->
+    <select id="countActiveNodes" resultType="long">
+        SELECT COUNT(*) FROM dim_nodes
+        WHERE is_active = 1
+    </select>
+
+    <!-- 根据组织类型统计节点数量 -->
+    <select id="countByAffiliationType" resultType="long">
+        SELECT COUNT(*) FROM dim_nodes
+        WHERE affiliation_type = #{affiliationType}
+    </select>
+
+    <!-- 根据国家统计节点数量 -->
+    <select id="countByCountry" resultType="long">
+        SELECT COUNT(*) FROM dim_nodes
+        WHERE country = #{country}
+    </select>
+
+    <!-- 统计移动节点数量 -->
+    <select id="countMobileNodes" resultType="long">
+        SELECT COUNT(*) FROM dim_nodes
+        WHERE is_mobile = 1
+    </select>
+
+    <!-- ======================= 地图按需加载相关方法 ======================= -->
+
+    <!-- 根据地理边界查询地图节点信息（性能优化版本） -->
+    <select id="selectMapNodesByBounds" resultType="com.allstarlink.dashboard.vo.MapNodeVO">
+        SELECT
+            node_id as nodeId,
+            callsign,
+            latitude,
+            longitude,
+            is_active as isActive,
+            node_rank as nodeRank,
+            affiliation_type as affiliationType,
+            country
+        FROM dim_nodes
+        WHERE latitude BETWEEN #{query.minLat} AND #{query.maxLat}
+        AND longitude BETWEEN #{query.minLng} AND #{query.maxLng}
+        AND latitude IS NOT NULL
+        AND longitude IS NOT NULL
+        AND is_active = 1
+        <if test="query.zoomLevel != null and query.zoomLevel &lt; 6">
+            <!-- 低缩放级别时，仅返回Core和Active级别节点，实现抽稀 -->
+            AND node_rank IN ('Core', 'Active')
+        </if>
+        <if test="query.zoomLevel != null and query.zoomLevel &lt; 4">
+            <!-- 极低缩放级别时，优先返回System类型节点 -->
+            AND (affiliation_type = 'System' OR node_rank = 'Core')
+        </if>
+        ORDER BY
+            CASE
+                WHEN node_rank = 'Core' THEN 1
+                WHEN node_rank = 'Active' THEN 2
+                ELSE 3
+            END,
+            CASE
+                WHEN affiliation_type = 'System' THEN 1
+                WHEN affiliation_type = 'Club' THEN 2
+                ELSE 3
+            END
+        LIMIT 2000
+    </select>
+
+    <!-- 根据地理边界统计节点数量 -->
+    <select id="countNodesByBounds" resultType="Long">
+        SELECT COUNT(*)
+        FROM dim_nodes
+        WHERE latitude BETWEEN #{query.minLat} AND #{query.maxLat}
+        AND longitude BETWEEN #{query.minLng} AND #{query.maxLng}
+        AND latitude IS NOT NULL
+        AND longitude IS NOT NULL
+        AND is_active = 1
+    </select>
+
+    <!-- ======================= 分布统计相关方法 ======================= -->
+
+    <!-- 按大洲统计节点分布 -->
+    <select id="selectDistributionByContinent" resultType="com.allstarlink.dashboard.vo.DistributionStatsVO">
+        SELECT
+            continent as dimensionName,
+            COUNT(*) as totalCount,
+            SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as activeCount,
+            ROUND(
+                SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*),
+                2
+            ) as activeRate
+        FROM dim_nodes
+        WHERE continent IS NOT NULL
+        GROUP BY continent
+        ORDER BY totalCount DESC
+    </select>
+
+    <!-- 按国家统计节点分布 -->
+    <select id="selectDistributionByCountry" resultType="com.allstarlink.dashboard.vo.DistributionStatsVO">
+        SELECT
+            country as dimensionName,
+            COUNT(*) as totalCount,
+            SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as activeCount,
+            ROUND(
+                SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*),
+                2
+            ) as activeRate
+        FROM dim_nodes
+        WHERE country IS NOT NULL
+        GROUP BY country
+        ORDER BY totalCount DESC
+        LIMIT 50
+    </select>
+
+    <!-- 获取全球节点总体统计信息 -->
+    <select id="selectGlobalStats" resultType="map">
+        SELECT
+            COUNT(*) as totalNodes,
+            SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as activeNodes
+        FROM dim_nodes
+    </select>
+
+    <!-- ======================= 分页查询相关方法 ======================= -->
+
+    <!-- 分页查询节点列表 -->
+    <select id="selectNodeListByPage" resultType="com.allstarlink.dashboard.vo.NodeListVO">
+        SELECT
+            dn.node_id as nodeId,
+            dn.callsign,
+            dn.owner,
+            dn.affiliation,
+            dn.affiliation_type as affiliationType,
+            dn.country,
+            dn.continent,
+            dn.is_active as isActive,
+            dn.last_seen as lastSeen,
+            dn.node_rank as nodeRank,
+            dn.mobility_type as mobilityType,
+            dn.first_seen_at as firstSeenAt,
+            dn.latitude,
+            dn.longitude,
+            dn.is_mobile as isMobile,
+            dn.update_time as updateTime,
+            COALESCE(ar.activity_rate_24h, 0.00) as activityRate24h
+        FROM dim_nodes dn
+        LEFT JOIN (
+            SELECT
+                node_id,
+                ROUND(
+                    (SUM(CASE WHEN attr_name = 'is_active' AND new_value = '1' THEN 1 ELSE 0 END) * 100.0)
+                    / GREATEST(COUNT(*), 1),
+                    2
+                ) as activity_rate_24h
+            FROM dwd_node_events_fact
+            WHERE event_time >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+            AND event_type = 'status_change'
+            AND attr_name = 'is_active'
+            GROUP BY node_id
+        ) ar ON dn.node_id = ar.node_id
+        <where>
+            <if test="query.callsign != null and query.callsign != ''">
+                AND dn.callsign LIKE CONCAT('%', #{query.callsign}, '%')
+            </if>
+            <if test="query.owner != null and query.owner != ''">
+                AND dn.owner LIKE CONCAT('%', #{query.owner}, '%')
+            </if>
+            <if test="query.affiliation != null and query.affiliation != ''">
+                AND dn.affiliation LIKE CONCAT('%', #{query.affiliation}, '%')
+            </if>
+            <if test="query.affiliationType != null and query.affiliationType != ''">
+                AND dn.affiliation_type = #{query.affiliationType}
+            </if>
+            <if test="query.country != null and query.country != ''">
+                AND dn.country = #{query.country}
+            </if>
+            <if test="query.continent != null and query.continent != ''">
+                AND dn.continent = #{query.continent}
+            </if>
+            <if test="query.isActive != null">
+                AND dn.is_active = #{query.isActive}
+            </if>
+            <if test="query.nodeRank != null and query.nodeRank != ''">
+                AND dn.node_rank = #{query.nodeRank}
+            </if>
+            <if test="query.mobilityType != null and query.mobilityType != ''">
+                AND dn.mobility_type = #{query.mobilityType}
+            </if>
+            <if test="query.isMobile != null">
+                AND dn.is_mobile = #{query.isMobile}
+            </if>
+        </where>
+        ORDER BY
+        <choose>
+            <when test="query.sortField == 'nodeId'">
+                dn.node_id
+            </when>
+            <when test="query.sortField == 'callsign'">
+                dn.callsign
+            </when>
+            <when test="query.sortField == 'country'">
+                dn.country
+            </when>
+            <when test="query.sortField == 'lastSeen'">
+                dn.last_seen
+            </when>
+            <when test="query.sortField == 'firstSeenAt'">
+                dn.first_seen_at
+            </when>
+            <otherwise>
+                dn.update_time
+            </otherwise>
+        </choose>
+        <choose>
+            <when test="query.sortOrder == 'asc'">
+                ASC
+            </when>
+            <otherwise>
+                DESC
+            </otherwise>
+        </choose>
+        LIMIT #{query.offset}, #{query.size}
+    </select>
+
+    <!-- 统计分页查询总数 -->
+    <select id="countNodeListByPage" resultType="Long">
+        SELECT COUNT(*)
+        FROM dim_nodes dn
+        <where>
+            <if test="query.callsign != null and query.callsign != ''">
+                AND dn.callsign LIKE CONCAT('%', #{query.callsign}, '%')
+            </if>
+            <if test="query.owner != null and query.owner != ''">
+                AND dn.owner LIKE CONCAT('%', #{query.owner}, '%')
+            </if>
+            <if test="query.affiliation != null and query.affiliation != ''">
+                AND dn.affiliation LIKE CONCAT('%', #{query.affiliation}, '%')
+            </if>
+            <if test="query.affiliationType != null and query.affiliationType != ''">
+                AND dn.affiliation_type = #{query.affiliationType}
+            </if>
+            <if test="query.country != null and query.country != ''">
+                AND dn.country = #{query.country}
+            </if>
+            <if test="query.continent != null and query.continent != ''">
+                AND dn.continent = #{query.continent}
+            </if>
+            <if test="query.isActive != null">
+                AND dn.is_active = #{query.isActive}
+            </if>
+            <if test="query.nodeRank != null and query.nodeRank != ''">
+                AND dn.node_rank = #{query.nodeRank}
+            </if>
+            <if test="query.mobilityType != null and query.mobilityType != ''">
+                AND dn.mobility_type = #{query.mobilityType}
+            </if>
+            <if test="query.isMobile != null">
+                AND dn.is_mobile = #{query.isMobile}
+            </if>
+        </where>
+    </select>
+
+    <!-- 计算节点24小时活跃率 -->
+    <select id="selectActivityRates24h" resultType="map">
+        SELECT
+            node_id,
+            ROUND(
+                (SUM(CASE WHEN attr_name = 'is_active' AND new_value = '1' THEN 1 ELSE 0 END) * 100.0)
+                / GREATEST(COUNT(*), 1),
+                2
+            ) as activityRate
+        FROM dwd_node_events_fact
+        WHERE node_id IN
+        <foreach collection="nodeIds" item="nodeId" open="(" close=")" separator=",">
+            #{nodeId}
+        </foreach>
+        AND event_time >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+        AND event_type = 'status_change'
+        AND attr_name = 'is_active'
+        GROUP BY node_id
+    </select>
+
+</mapper>

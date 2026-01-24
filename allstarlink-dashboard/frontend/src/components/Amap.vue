@@ -12,6 +12,28 @@
         <el-option label="活跃节点" value="active" />
         <el-option label="非活跃节点" value="inactive" />
       </el-select>
+
+      <el-select v-model="maxMarkersToShow" placeholder="显示数量" size="small" style="margin-left: 10px;" @change="loadLocationsToMap">
+        <el-option label="100个节点" :value="100" />
+        <el-option label="300个节点" :value="300" />
+        <el-option label="500个节点" :value="500" />
+        <el-option label="1000个节点" :value="1000" />
+        <el-option label="全部节点" :value="99999" />
+      </el-select>
+    </div>
+
+    <!-- 地图说明 -->
+    <div class="map-notice">
+      <el-alert
+        title="地图调试模式"
+        type="warning"
+        :closable="false"
+        show-icon
+      >
+        <template #default>
+          正在调试AllStarLink节点显示。如果看不到节点，请查看浏览器控制台的调试信息。
+        </template>
+      </el-alert>
     </div>
     
     <!-- 地图容器 -->
@@ -48,7 +70,6 @@
 <script setup>
 import { ref, onMounted, watch, nextTick, onUnmounted } from 'vue'
 import AMapLoader from '@amap/amap-jsapi-loader'
-import { geocodeLocation } from '../utils/api'
 
 // 组件属性
 const props = defineProps({
@@ -68,7 +89,9 @@ const activeFilter = ref('all')
 const selectedLocation = ref(null)
 const markersLayer = ref(null)
 const heatmapLayer = ref(null)
+const markerClusterer = ref(null) // 节点聚合器
 const locationCoordinates = ref(new Map()) // 缓存位置坐标，避免重复请求
+const maxMarkersToShow = ref(500) // 最大显示节点数
 
 // 地图初始化
 const initMap = () => {
@@ -84,15 +107,15 @@ const initMap = () => {
     key: '2d608fb0a4f54f0bf39462b10bb7dce3', // 用户提供的实际高德地图API密钥
     securityJsCode: 'f53692c16585a101a8434cb7b57eacbe', // 用户提供的安全密钥
     version: '2.0',
-    plugins: ['AMap.Heatmap', 'AMap.MarkerClusterer']
+    plugins: ['AMap.HeatMap', 'AMap.MarkerClusterer']
   }).then((AMap) => {
     console.log('高德地图加载成功')
     AMapInstance.value = AMap // 保存AMap实例
     
-    // 创建地图实例，优化配置以获得更好的国外地图显示效果
+    // 创建地图实例，设置为美国中心（AllStarLink主要区域）
     map.value = new AMap.Map(mapContainer.value, {
-      center: [-100.04, 38.9072], // 默认美国中心，因为AllStarLink节点主要分布在美国
-      zoom: 4, // 调整为更合适的初始缩放级别
+      center: [-100, 40], // 美国中心
+      zoom: 4, // 适合美国大陆的缩放级别
       viewMode: '2D', // 使用2D视图，提升性能
       mapStyle: 'amap://styles/normal', // 使用默认地图样式，确保地图瓦片正常显示
       showLabel: true, // 开启标签显示，获取更详细的国外地址信息
@@ -105,14 +128,30 @@ const initMap = () => {
     
     // 初始化图层 - 不添加额外的TileLayer，使用地图默认图层
     markersLayer.value = []
-    heatmapLayer.value = new AMap.Heatmap(map.value, {
+
+    // 初始化热力图
+    heatmapLayer.value = new AMap.HeatMap(map.value, {
       radius: 30,
       opacity: [0, 0.8]
     })
-    
-    console.log('图层初始化成功')
+
+    // 初始化节点聚合器
+    markerClusterer.value = new AMap.MarkerClusterer(map.value, [], {
+      gridSize: 60,        // 聚合网格大小
+      maxZoom: 15,         // 聚合的最大缩放级别
+      averageCenter: true, // 聚合点是否是所有聚合内点的平均中心
+      styles: [{
+        url: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="40" height="40"%3E%3Ccircle cx="20" cy="20" r="18" fill="rgba(67,194,58,0.8)" stroke="white" stroke-width="2"/%3E%3Ctext x="20" y="25" font-size="12" text-anchor="middle" fill="white" font-weight="bold"%3E[count]%3C/text%3E%3C/svg%3E',
+        size: new AMap.Size(40, 40),
+        offset: new AMap.Pixel(-20, -20),
+        textColor: '#fff',
+        textSize: 12
+      }]
+    })
+
+    console.log('图层初始化成功（包含聚合器）')
     console.log('初始位置数据:', props.locationStats)
-    
+
     // 加载位置数据
     loadLocationsToMap()
   }).catch(error => {
@@ -124,18 +163,28 @@ const initMap = () => {
 
 // 加载位置数据到地图
 const loadLocationsToMap = async () => {
-  if (!map.value || !AMapInstance.value) return
-  
-  console.log('开始加载位置数据到地图...')
-  console.log('原始位置数据数量:', props.locationStats.length)
-  console.log('原始位置数据示例:', props.locationStats.slice(0, 3))
-  
+  if (!map.value || !AMapInstance.value) {
+    console.error('❌ 地图或AMap实例未准备好!')
+    console.log('map.value:', map.value)
+    console.log('AMapInstance.value:', AMapInstance.value)
+    return
+  }
+
+  console.log('🗺️ 开始加载位置数据到地图...')
+  console.log('📊 原始位置数据数量:', props.locationStats.length)
+  console.log('📋 原始位置数据示例:', props.locationStats.slice(0, 2))
+
   // 清空现有标记
   markersLayer.value.forEach(marker => {
     map.value.remove(marker)
   })
   markersLayer.value = []
-  
+
+  // 清空聚合器
+  if (markerClusterer.value) {
+    markerClusterer.value.setMarkers([])
+  }
+
   // 清空热力图数据（如果存在）
   if (heatmapLayer.value && typeof heatmapLayer.value.setData === 'function') {
     heatmapLayer.value.setData([])
@@ -168,15 +217,29 @@ const loadLocationsToMap = async () => {
     console.log('非活跃节点筛选后数量:', filteredNodes.length)
   }
   
-  console.log('最终显示的节点数量:', filteredNodes.length)
-  
+  // 性能优化：限制显示的节点数量
+  if (filteredNodes.length > maxMarkersToShow.value) {
+    // 按节点ID排序，保证一致性（也可以按其他字段如最近在线时间排序）
+    filteredNodes.sort((a, b) => b.nodeId - a.nodeId)
+    filteredNodes = filteredNodes.slice(0, maxMarkersToShow.value)
+    console.log(`性能优化：节点数量过多，只显示前 ${maxMarkersToShow.value} 个节点`)
+  }
+
+  console.log('🎯 最终显示的节点数量:', filteredNodes.length)
+  console.log('🎯 第一个节点示例:', filteredNodes[0])
+
   if (mapType.value === 'markers') {
-    // 添加节点标记
-    console.log('开始添加节点标记...')
+    // 添加节点标记（暂时使用直接模式，不使用聚合）
+    console.log('🚀 开始添加节点标记（直接模式）...')
+    let addedCount = 0
     for (const node of filteredNodes) {
-      await addNodeMarker(node)
+      await addNodeMarkerDirect(node)
+      addedCount++
+      if (addedCount <= 3) {
+        console.log(`✅ 已处理节点 ${addedCount}/${filteredNodes.length}:`, node.nodeId)
+      }
     }
-    console.log('节点标记添加完成，共添加:', markersLayer.value.length, '个标记')
+    console.log('✨ 节点标记添加完成！共添加:', markersLayer.value.length, '个标记')
   } else if (mapType.value === 'heatmap') {
     // 创建热力图
     console.log('开始创建热力图...')
@@ -185,8 +248,8 @@ const loadLocationsToMap = async () => {
   }
 }
 
-// 添加节点标记
-const addNodeMarker = async (node) => {
+// 创建节点标记（用于聚合）
+const createNodeMarker = async (node) => {
   if (!node || !node.location || !AMapInstance.value) {
     console.log('跳过无效节点数据:', node)
     return
@@ -247,14 +310,91 @@ const addNodeMarker = async (node) => {
       }
       console.log('selectedLocation更新:', selectedLocation.value)
     })
-    
-    // 设置标记的层级，确保能被点击
-    marker.setZIndex(node.isActive ? 200 : 100) // 活跃节点层级更高
-    
-    // 添加到地图和图层数组
+
+    // 设置标记的层级（AMap 2.0 API不支持setZIndex，使用默认层级）
+    // marker.setZIndex(node.isActive ? 200 : 100) // 活跃节点层级更高
+
+    console.log('标记创建成功:', cleanedLocation, '节点ID:', node.nodeId)
+    return marker // 返回标记对象，由聚合器管理
+
+  } catch (error) {
+    console.error('创建节点标记失败:', error)
+    console.error('节点数据:', node)
+    return null
+  }
+}
+
+// 直接添加节点标记（不使用聚合）
+const addNodeMarkerDirect = async (node) => {
+  if (!node || !node.location || !AMapInstance.value) {
+    console.log('⚠️ 跳过无效节点数据:', node)
+    return
+  }
+
+  // 清理位置名称，去除前后空格和特殊字符
+  const cleanedLocation = node.location ? node.location.trim() : ''
+  if (!cleanedLocation) {
+    console.log('⚠️ 跳过空位置名称:', node)
+    return
+  }
+
+  console.log('🔍 处理节点:', cleanedLocation,
+    '节点ID:', node.nodeId,
+    '是否活跃:', node.isActive,
+    '经纬度:', node.latitude + ',' + node.longitude)
+
+  try {
+    // 获取位置坐标 - 直接使用后端返回的经纬度
+    let lngLat = null
+
+    // 检查后端是否返回了经纬度
+    if (node.latitude && node.longitude) {
+      lngLat = [node.longitude, node.latitude] // 注意：高德地图使用 [经度, 纬度] 顺序
+      console.log(`使用后端返回的坐标: ${cleanedLocation} - [${lngLat[0]}, ${lngLat[1]}]`)
+    } else {
+      // 后端没有返回经纬度，使用哈希生成的示例坐标
+      lngLat = generateExampleCoordinates(cleanedLocation)
+      console.log(`使用示例坐标: ${cleanedLocation} - [${lngLat[0]}, ${lngLat[1]}]`)
+    }
+
+    if (!lngLat) {
+      console.log('无法获取坐标，跳过节点:', cleanedLocation)
+      return // 无法获取经纬度，跳过该节点
+    }
+
+    // 设置标记颜色
+    const markerColor = node.isActive ? 'rgba(103, 194, 58, 0.8)' : 'rgba(245, 108, 108, 0.8)'
+
+    // 创建标记标题
+    let markerTitle = `${cleanedLocation}\n节点ID: ${node.nodeId}\n坐标: ${lngLat[1].toFixed(4)}, ${lngLat[0].toFixed(4)}`
+
+    // 创建简单标记（使用默认图标，避免SVG问题）
+    const marker = new AMapInstance.value.Marker({
+      position: lngLat,
+      title: markerTitle,
+      // 暂时使用默认标记，不使用自定义图标
+    })
+
+    // 绑定点击事件
+    marker.on('click', function(e) {
+      console.log('标记被点击:', cleanedLocation, '节点ID:', node.nodeId)
+      selectedLocation.value = {
+        ...node,
+        location: cleanedLocation,
+        totalNodes: 1,
+        activeNodes: node.isActive ? 1 : 0
+      }
+      console.log('selectedLocation更新:', selectedLocation.value)
+    })
+
+    // 设置标记的层级（AMap 2.0 API不支持setZIndex，使用默认层级）
+    // marker.setZIndex(node.isActive ? 200 : 100)
+
+    // 直接添加到地图
     map.value.add(marker)
     markersLayer.value.push(marker)
-    console.log('标记添加到地图:', cleanedLocation, '节点ID:', node.nodeId)
+    console.log('✅ 标记成功添加到地图:', cleanedLocation, '节点ID:', node.nodeId,
+      '坐标:', lngLat[0].toFixed(3), lngLat[1].toFixed(3))
   } catch (error) {
     console.error('添加节点标记失败:', error)
     console.error('节点数据:', node)
@@ -320,7 +460,7 @@ const createHeatmap = async (nodes) => {
   
   // 确保热力图实例存在
   if (!heatmapLayer.value) {
-    heatmapLayer.value = new AMapInstance.value.Heatmap(map.value, {
+    heatmapLayer.value = new AMapInstance.value.HeatMap(map.value, {
       radius: 30,
       opacity: [0, 0.8]
     })
@@ -356,6 +496,9 @@ onMounted(() => {
 
 // 组件卸载时清理资源
 onUnmounted(() => {
+  if (markerClusterer.value) {
+    markerClusterer.value.setMarkers([])
+  }
   if (map.value) {
     map.value.destroy()
   }
@@ -381,6 +524,14 @@ onUnmounted(() => {
   border-radius: 4px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
   z-index: 10;
+}
+
+.map-notice {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  max-width: 350px;
 }
 
 .map {

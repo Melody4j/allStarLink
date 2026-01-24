@@ -39,18 +39,6 @@
 
     <!-- 图表区域 -->
     <div class="charts-area">
-      <!-- 节点分布（按国家） -->
-      <el-card shadow="hover" class="chart-card">
-        <template #header>
-          <div class="card-header">
-            <span>节点分布（按国家）</span>
-          </div>
-        </template>
-        <div class="chart-wrapper">
-          <v-chart :option="countryPieChart" autoresize />
-        </div>
-      </el-card>
-
       <!-- 活跃节点趋势（模拟数据） -->
       <el-card shadow="hover" class="chart-card full-width">
         <template #header>
@@ -81,7 +69,7 @@ import {
   TransformComponent,
   LegendComponent
 } from 'echarts/components'
-import { getGlobalStats, getNodeStatsByCountry } from '../utils/api'
+import { getGlobalStats } from '../utils/api'
 
 // 注册 ECharts 组件
 use([
@@ -106,46 +94,6 @@ const globalStats = reactive({
   activeNodes: 0,
   activePercentage: 0
 })
-
-// 国家统计数据
-const countryStats = ref([])
-
-// 国家饼图配置
-const countryPieChart = ref({
-  title: {
-    text: '节点分布（按国家）',
-    left: 'center'
-  },
-  tooltip: {
-    trigger: 'item',
-    formatter: '{b}: {c} ({d}%)'
-  },
-  legend: {
-    orient: 'vertical',
-    left: 'left',
-    type: 'scroll'
-  },
-  series: [
-    {
-      name: '节点数',
-      type: 'pie',
-      radius: '60%',
-      data: [],
-      emphasis: {
-        itemStyle: {
-          shadowBlur: 10,
-          shadowOffsetX: 0,
-          shadowColor: 'rgba(0, 0, 0, 0.5)'
-        }
-      },
-      label: {
-        formatter: '{b}: {c}'
-      }
-    }
-  ]
-})
-
-
 
 // 活跃节点趋势图配置（模拟数据）
 const activeTrendChart = ref({
@@ -209,11 +157,6 @@ const activeTrendChart = ref({
         const stats = await getGlobalStats(timeRange.value)
         Object.assign(globalStats, stats)
 
-        // 获取国家统计
-        const countryStatsData = await getNodeStatsByCountry(timeRange.value)
-        countryStats.value = countryStatsData.value || countryStatsData
-        updateCountryPieChart()
-
         // 更新趋势图（模拟数据）
         updateActiveTrendChart()
 
@@ -221,18 +164,6 @@ const activeTrendChart = ref({
         console.error('获取统计数据失败:', error)
       }
     }
-
-// 更新国家饼图
-const updateCountryPieChart = () => {
-  const pieData = countryStats.value
-    .slice(0, 15) // 只显示前15个国家
-    .map(item => ({
-      name: item.country || '未知',
-      value: item.totalNodes
-    }))
-  
-  countryPieChart.value.series[0].data = pieData
-}
 
 // 更新活跃节点趋势图（模拟数据）
 const updateActiveTrendChart = () => {
