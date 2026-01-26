@@ -33,6 +33,7 @@ from sqlalchemy import create_engine, text, MetaData, Table
 from sqlalchemy.dialects.mysql import insert
 from sqlalchemy.pool import QueuePool
 import logging
+import reverse_geocoder as rg
 
 # 配置日志
 logging.basicConfig(
@@ -168,91 +169,92 @@ class RealtimeETLProcessor:
             # 北美洲详细划分
             if 15 <= lat <= 85 and -180 <= lon <= -50:
                 continent = 'North America'
-                if 24 <= lat <= 49 and -125 <= lon <= -66:
-                    if lat >= 49 or lon <= -95:
-                        country = 'Canada' if lat >= 49 else 'United States'
-                    else:
-                        country = 'United States'
-                elif 14 <= lat <= 32 and -118 <= lon <= -86:
-                    country = 'Mexico'
-                elif 10 <= lat <= 30 and -90 <= lon <= -60:
-                    country = 'Central America'
-                elif 60 <= lat <= 85:
-                    country = 'Canada'
 
             # 南美洲
             elif -56 <= lat <= 15 and -82 <= lon <= -34:
                 continent = 'South America'
-                if -35 <= lat <= 5 and -74 <= lon <= -48:
-                    country = 'Brazil'
-                elif -55 <= lat <= -21 and -74 <= lon <= -53:
-                    country = 'Argentina'
-                else:
-                    country = 'South America'
 
             # 欧洲详细划分
             elif 35 <= lat <= 72 and -10 <= lon <= 70:
                 continent = 'Europe'
-                if 36 <= lat <= 70 and -10 <= lon <= 32:
-                    if 49 <= lat <= 60 and -8 <= lon <= 2:
-                        country = 'United Kingdom'
-                    elif 42 <= lat <= 51 and -5 <= lon <= 10:
-                        country = 'France'
-                    elif 47 <= lat <= 55 and 6 <= lon <= 17:
-                        country = 'Germany'
-                    elif 55 <= lat <= 69 and 4 <= lon <= 32:
-                        country = 'Scandinavia'
-                    else:
-                        country = 'Europe'
-                elif 41 <= lat <= 70 and 19 <= lon <= 70:
-                    country = 'Eastern Europe'
 
             # 亚洲详细划分
             elif -11 <= lat <= 80 and 25 <= lon <= 180:
                 continent = 'Asia'
-                if 20 <= lat <= 54 and 73 <= lon <= 135:
-                    country = 'China'
-                elif 24 <= lat <= 46 and 123 <= lon <= 146:
-                    country = 'Japan'
-                elif 50 <= lat <= 80 and 19 <= lon <= 180:
-                    country = 'Russia'
-                elif 6 <= lat <= 37 and 68 <= lon <= 98:
-                    country = 'India'
-                elif -11 <= lat <= 20 and 95 <= lon <= 141:
-                    country = 'Southeast Asia'
-                elif 12 <= lat <= 42 and 26 <= lon <= 45:
-                    country = 'Middle East'
-                else:
-                    country = 'Asia'
 
             # 非洲
             elif -35 <= lat <= 38 and -18 <= lon <= 52:
                 continent = 'Africa'
-                if -35 <= lat <= -22 and 16 <= lon <= 33:
-                    country = 'South Africa'
-                elif -26 <= lat <= 38 and -18 <= lon <= 52:
-                    country = 'Africa'
 
             # 大洋洲
             elif -48 <= lat <= -9 and 110 <= lon <= 180:
                 continent = 'Oceania'
-                if -44 <= lat <= -9 and 113 <= lon <= 154:
-                    country = 'Australia'
-                elif -47 <= lat <= -34 and 166 <= lon <= 179:
-                    country = 'New Zealand'
-                else:
-                    country = 'Oceania'
 
             # 南极洲
             elif lat < -60:
                 continent = 'Antarctica'
-                country = 'Antarctica'
 
             return continent, country
 
         except Exception as e:
             logger.warning(f"地理信息获取异常 lat={lat}, lon={lon}: {e}")
             return 'Unknown', 'Unknown'
+
+    def get_countries_batch(self, df: pd.DataFrame) -> pd.DataFrame:
+        """批量获取国家信息"""
+        logger.debug(f"Starting batch country lookup for {len(df)} records...")
+        
+        # 准备有效坐标数据
+        valid_mask = (
+            (~df['latitude'].isna()) & 
+            (~df['longitude'].isna()) & 
+            (df['latitude'] != 0.0) & 
+            (df['longitude'] != 0.0)
+        )
+        # 将列表转换为元组，使其可以作为字典键
+        valid_coords = [tuple(coord) for coord in df[valid_mask][['latitude', 'longitude']].values.tolist()]
+        
+        # 初始化结果字典
+        country_map = {}
+        
+        if valid_coords:
+            try:
+                # 批量查询
+                logger.debug(f"Querying reverse_geocoder for {len(valid_coords)} coordinates...")
+                results = rg.search(valid_coords)
+                logger.debug(f"Received {len(results)} results from reverse_geocoder")
+                
+                # 输出前几个结果的完整信息
+                for i in range(min(5, len(results))):
+                    logger.debug(f"Result {i}: {results[i]}")
+                
+                for i, result in enumerate(results):
+                    # valid_coords[i]是一个元组(lat, lon)
+                    coord_tuple = valid_coords[i]
+                    # 使用'cc'字段（国家代码）而不是'name'字段（城市名称）
+                    country_map[coord_tuple] = result.get('cc', 'Unknown')
+                    if i < 5:  # 只记录前5个
+                        logger.debug(f"Coord {coord_tuple} -> {result.get('cc', 'Unknown')} ({result.get('name', 'Unknown')})")
+                
+                logger.info(f"Successfully looked up {len(results)} countries")
+            except Exception as e:
+                logger.warning(f"Batch country lookup failed: {e}")
+                import traceback
+                logger.warning(traceback.format_exc())
+        
+        # 创建结果DataFrame
+        df_result = df.copy()
+        
+        # 使用索引来匹配结果
+        valid_indices = df[valid_mask].index.tolist()
+        for idx, coord_tuple in zip(valid_indices, valid_coords):
+            df_result.at[idx, 'country'] = country_map.get(coord_tuple, 'Unknown')
+        
+        # 统计Unknown数量
+        unknown_count = (df_result['country'] == 'Unknown').sum()
+        logger.info(f"Country lookup completed: {len(df_result) - unknown_count} known, {unknown_count} unknown")
+        
+        return df_result
 
     def classify_affiliation_type(self, affiliation, callsign):
         """对affiliation进行分类"""
@@ -311,11 +313,17 @@ class RealtimeETLProcessor:
 
             # 6. 向量化地理增强
             logger.debug("Enhancing geographical data...")
+            
+            # 批量获取大洲信息
             geo_data = df_final[['latitude', 'longitude']].apply(
                 lambda row: self.get_continent_country(row['latitude'], row['longitude']),
                 axis=1, result_type='expand'
             )
             df_final[['continent', 'country']] = geo_data
+            
+            # 批量获取国家信息（覆盖之前的country字段）
+            logger.debug("Starting batch country lookup...")
+            df_final = self.get_countries_batch(df_final)
 
             # 7. 向量化组织分类
             logger.debug("Classifying organization types...")
@@ -422,6 +430,7 @@ class RealtimeETLProcessor:
             df_comparison['lon_diff'] = np.abs(df_comparison['lon_now'] - df_comparison['lon_last'])
 
             # 地理位移条件
+            # 情况1：节点在线，经纬度发生有效变化
             geo_move_mask = (
                 (df_comparison['_merge'] == 'both') &
                 ((df_comparison['lat_diff'] > GEO_MOVE_THRESHOLD) |
@@ -429,6 +438,19 @@ class RealtimeETLProcessor:
                 (df_comparison['lat_now'] != 0) & (df_comparison['lon_now'] != 0) &  # 当前坐标有效
                 (df_comparison['lat_last'] != 0) & (df_comparison['lon_last'] != 0)  # 历史坐标有效
             )
+            
+            # 情况2：节点上线（从下线变为上线），且历史经纬度不为空，与当前经纬度有差别
+            node_online_mask = (
+                (df_comparison['_merge'] == 'both') &
+                (df_comparison['is_active_last'] == 0) & (df_comparison['is_active_now'] == 1) &  # 节点上线
+                (df_comparison['lat_now'] != 0) & (df_comparison['lon_now'] != 0) &  # 当前坐标有效
+                (df_comparison['lat_last'] != 0) & (df_comparison['lon_last'] != 0) &  # 历史坐标有效
+                ((df_comparison['lat_diff'] > GEO_MOVE_THRESHOLD) |
+                 (df_comparison['lon_diff'] > GEO_MOVE_THRESHOLD))  # 经纬度有差别
+            )
+            
+            # 合并两种情况
+            geo_move_mask = geo_move_mask | node_online_mask
             df_geo_moves = df_comparison[geo_move_mask]
 
             # 4. 新增节点检测
@@ -478,17 +500,28 @@ class RealtimeETLProcessor:
                 )
                 logger.info(f"Inserted {len(events)} events to DWD")
 
-            # 6. 更新DIM表（仅变动节点）
-            changed_node_ids = set()
-            changed_node_ids.update(df_status_changes['node_id'].tolist())
-            changed_node_ids.update(df_geo_moves['node_id'].tolist())
-            changed_node_ids.update(df_new_nodes['node_id'].tolist())
-
-            if changed_node_ids:
-                df_changed = df_now[df_now['node_id'].isin(changed_node_ids)]
-                self._upsert_dim_nodes(df_changed)
-                changes_summary['dim_updates'] = len(changed_node_ids)
-                logger.info(f"Updated {len(changed_node_ids)} nodes in DIM")
+            # 6. 更新DIM表（分别处理状态变化和地理变化）
+            
+            # 6.1 处理状态变化（上线/下线）：更新is_active等字段，但不更新经纬度
+            if not df_status_changes.empty:
+                df_status_changed = df_now[df_now['node_id'].isin(df_status_changes['node_id'])]
+                # 对于状态变化，保留原经纬度（如果当前经纬度为空）
+                self._upsert_dim_nodes_preserve_geo(df_status_changed)
+                changes_summary['dim_updates'] += len(df_status_changed)
+                logger.info(f"Updated {len(df_status_changed)} nodes status in DIM")
+            
+            # 6.2 处理地理变化：只在经纬度有效且符合漂移阈值时才更新
+            geo_changed_node_ids = set(df_geo_moves['node_id'].tolist())
+            geo_changed_node_ids.update(df_new_nodes['node_id'].tolist())
+            
+            if geo_changed_node_ids:
+                df_geo_changed = df_now[df_now['node_id'].isin(geo_changed_node_ids)]
+                # 只更新经纬度不为空且符合漂移阈值的节点
+                df_geo_changed = self._filter_valid_geo_changes(df_geo_changed)
+                if not df_geo_changed.empty:
+                    self._upsert_dim_nodes(df_geo_changed)
+                    changes_summary['dim_updates'] += len(df_geo_changed)
+                    logger.info(f"Updated {len(df_geo_changed)} nodes geo in DIM")
 
             # 7. 更新状态缓存 - 异常处理确保不清空缓存
             self.df_last = df_now.copy()
@@ -509,6 +542,106 @@ class RealtimeETLProcessor:
             logger.error(f"Change detection failed: {e}")
             logger.error(traceback.format_exc())
             # 异常时不清空df_last缓存
+            raise
+
+    def _filter_valid_geo_changes(self, df: pd.DataFrame) -> pd.DataFrame:
+        """过滤出经纬度有效且符合漂移阈值的节点
+        
+        Args:
+            df: 待过滤的数据框
+            
+        Returns:
+            过滤后的数据框，只包含经纬度有效且符合漂移阈值的节点
+        """
+        if df.empty:
+            return df
+            
+        # 获取当前数据中的经纬度
+        lat_now = pd.to_numeric(df['latitude'], errors='coerce')
+        lon_now = pd.to_numeric(df['longitude'], errors='coerce')
+        
+        # 获取缓存中的经纬度
+        df_merged = df.merge(
+            self.df_last[['node_id', 'latitude', 'longitude']],
+            on='node_id',
+            how='left',
+            suffixes=('', '_last')
+        )
+        
+        lat_last = pd.to_numeric(df_merged['latitude_last'], errors='coerce')
+        lon_last = pd.to_numeric(df_merged['longitude_last'], errors='coerce')
+        
+        # 计算经纬度差异
+        lat_diff = np.abs(lat_now - lat_last)
+        lon_diff = np.abs(lon_now - lon_last)
+        
+        # 判断是否为有效的经纬度变化
+        # 条件1: 当前经纬度不为空
+        valid_lat_lon = (~lat_now.isna()) & (~lon_now.isna()) & (lat_now != 0) & (lon_now != 0)
+        
+        # 条件2: 要么是新增节点（无历史数据），要么是经纬度变化超过阈值
+        is_new_node = lat_last.isna() | lon_last.isna()
+        is_geo_move = (lat_diff > GEO_MOVE_THRESHOLD) | (lon_diff > GEO_MOVE_THRESHOLD)
+        valid_change = is_new_node | is_geo_move
+        
+        # 应用过滤条件
+        valid_mask = valid_lat_lon & valid_change
+        
+        # 返回过滤后的数据
+        return df[valid_mask].copy()
+
+    def _upsert_dim_nodes_preserve_geo(self, df: pd.DataFrame):
+        """更新DIM表，保留原经纬度（用于状态变化）
+        
+        当节点上线/下线时，更新is_active等字段。
+        - 节点上线（is_active从0变为1）：更新经纬度
+        - 节点下线（is_active从1变为0）：不更新经纬度，保留原值
+        
+        Args:
+            df: 待更新的数据框
+        """
+        try:
+            # 准备DIM表数据
+            df_dim = df.copy()
+            df_dim['update_time'] = datetime.datetime.now()
+
+            # 添加DIM表需要的字段
+            if 'affiliation_type' not in df_dim.columns:
+                df_dim['affiliation_type'] = 'Personal'
+            if 'country' not in df_dim.columns:
+                df_dim['country'] = 'Unknown'
+            if 'continent' not in df_dim.columns:
+                df_dim['continent'] = 'Unknown'
+            df_dim['node_rank'] = 'Active'
+            df_dim['mobility_type'] = 'Fixed'
+            df_dim['first_seen_at'] = df_dim['last_seen']
+            df_dim['is_mobile'] = 0
+
+            # 选择DIM表字段（包含经纬度）
+            dim_columns = [
+                'node_id', 'callsign', 'owner', 'affiliation', 'affiliation_type',
+                'country', 'continent', 'is_active', 'last_seen', 'node_rank',
+                'mobility_type', 'first_seen_at', 'update_time', 'latitude', 'longitude'
+            ]
+
+            df_dim_final = df_dim[dim_columns].copy()
+
+            # 分批处理
+            batch_size = 1000
+            for i in range(0, len(df_dim_final), batch_size):
+                batch_df = df_dim_final.iloc[i:i + batch_size]
+
+                # 使用自定义upsert方法（条件更新经纬度）
+                batch_df.to_sql(
+                    'dim_nodes',
+                    con=self.engine,
+                    if_exists='append',
+                    index=False,
+                    method=self._mysql_upsert_method_conditional_geo
+                )
+
+        except Exception as e:
+            logger.error(f"DIM upsert (preserve geo) failed: {e}")
             raise
 
     def _upsert_dim_nodes(self, df: pd.DataFrame):
@@ -557,6 +690,55 @@ class RealtimeETLProcessor:
         except Exception as e:
             logger.error(f"DIM upsert failed: {e}")
             raise
+
+    def _mysql_upsert_method_conditional_geo(self, pd_table, conn, keys, data_iter):
+        """MySQL UPSERT实现（条件更新经纬度）
+        
+        在更新DIM表时，条件性地更新latitude和longitude字段：
+        - 当新值不为NULL且不为0时，才更新经纬度
+        - 当新值为NULL或为0时，保留数据库中的原值
+        """
+        data = [dict(zip(keys, row)) for row in data_iter]
+
+        stmt = insert(pd_table.table).values(data)
+        
+        # 构建更新字典
+        update_dict = {}
+        for c in stmt.inserted:
+            if c.name == 'node_id':
+                continue
+            
+            # 对于经纬度字段，使用条件更新
+            if c.name in ['latitude', 'longitude']:
+                # 使用原生SQL语句实现条件更新
+                # 当新值不为NULL且不为0时才更新，否则保留原值
+                update_dict[c.name] = text(f"CASE WHEN VALUES({c.name}) IS NOT NULL AND VALUES({c.name}) != 0 THEN VALUES({c.name}) ELSE {c.name} END")
+            # 对于大洲和国家字段，使用条件更新
+            elif c.name in ['country', 'continent']:
+                # 当新值不为NULL且不为'Unknown'时才更新，否则保留原值
+                update_dict[c.name] = text(f"CASE WHEN VALUES({c.name}) IS NOT NULL AND VALUES({c.name}) != 'Unknown' THEN VALUES({c.name}) ELSE {c.name} END")
+            else:
+                update_dict[c.name] = c
+        
+        on_duplicate_key_stmt = stmt.on_duplicate_key_update(update_dict)
+        result = conn.execute(on_duplicate_key_stmt)
+        return result.rowcount
+
+    def _mysql_upsert_method_preserve_geo(self, pd_table, conn, keys, data_iter):
+        """MySQL UPSERT实现（保留原经纬度）
+        
+        在更新DIM表时，不更新latitude和longitude字段，保留数据库中的原值。
+        """
+        data = [dict(zip(keys, row)) for row in data_iter]
+
+        stmt = insert(pd_table.table).values(data)
+        # 构建更新字典，排除node_id和经纬度字段
+        update_dict = {c.name: c for c in stmt.inserted 
+                      if c.name not in ['node_id', 'latitude', 'longitude']}
+        on_duplicate_key_stmt = stmt.on_duplicate_key_update(update_dict)
+
+        result = conn.execute(on_duplicate_key_stmt)
+        return result.rowcount
 
     def _mysql_upsert_method(self, pd_table, conn, keys, data_iter):
         """MySQL UPSERT实现"""
@@ -626,7 +808,7 @@ class RealtimeETLProcessor:
                         df_ods_final[col] = df_ods_final[col].astype('Int64')
 
             # 处理其他字段的空值（用空字符串替代）
-            string_columns = df_ods_final.select_dtypes(include=['object']).columns
+            string_columns = df_ods_final.select_dtypes(include=['object', 'str']).columns
             df_ods_final[string_columns] = df_ods_final[string_columns].fillna('')
 
             # 分批写入

@@ -184,4 +184,31 @@ public interface DimNodesMapper extends BaseMapper<DimNodes> {
      * @return 节点活跃率Map (key: nodeId, value: activityRate)
      */
     Map<Integer, BigDecimal> selectActivityRates24h(@Param("nodeIds") List<Integer> nodeIds);
+
+    // ======================= 缓存优化相关方法 =======================
+
+    /**
+     * 查询全量节点索引（轻量级，仅包含ID和位置）
+     * 用于全量缓存
+     *
+     * @return 节点索引列表
+     */
+    List<com.allstarlink.dashboard.vo.NodeIndexVO> selectAllNodesIndex();
+
+    /**
+     * 根据缩放级别查询节点
+     * 不同缩放级别返回不同密度的节点数据
+     *
+     * @param zoomLevel 缩放级别
+     * @return 节点列表
+     */
+    List<MapNodeVO> selectNodesByZoomLevel(@Param("zoomLevel") int zoomLevel);
+
+    /**
+     * 查询所有经纬度不为0的节点（用于地图展示）
+     * 包括在线和非在线节点
+     *
+     * @return 所有有效节点列表
+     */
+    List<MapNodeVO> selectAllMapNodes();
 }

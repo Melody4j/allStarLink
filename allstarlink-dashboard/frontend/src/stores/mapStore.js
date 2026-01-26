@@ -25,6 +25,21 @@ export const useMapStore = defineStore('map', () => {
   const mapNodes = shallowRef([])
 
   /**
+   * 全量节点索引（用于低缩放级别的抽稀）
+   */
+  const fullNodeIndex = shallowRef([])
+
+  /**
+   * 全量地图节点（用于前端地图展示，包含所有经纬度不为0的节点）
+   */
+  const fullMapNodes = shallowRef([])
+
+  /**
+   * 分级缓存（用于中等缩放级别）
+   */
+  const levelCache = shallowRef({})
+
+  /**
    * 当前选中的节点
    */
   const selectedNode = ref(null)
@@ -147,6 +162,9 @@ export const useMapStore = defineStore('map', () => {
     distributionStats,
     statsDimension,
     globalStats,
+    fullNodeIndex,
+    fullMapNodes,
+    levelCache,
 
     // Actions
     setMapInstance,

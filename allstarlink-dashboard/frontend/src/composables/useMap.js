@@ -34,11 +34,16 @@ export function useMap() {
         features: ['bg', 'road', 'building', 'point']
       })
 
-      // 创建标注图层 (Canvas 模式)
+      // 创建标注图层 (Canvas 模式，支持海量点位渲染）
       const labelsLayer = new AMap.LabelsLayer({
         zIndex: 1000,
-        collision: false, // 暂时关闭避让，确保所有节点都显示
-        allowCollision: true
+        collision: true, // 开启避让，避免标记重叠
+        allowCollision: true,
+        // 优化渲染性能
+        animation: false,
+        autoHide: false,
+        // 设置碰撞检测的像素距离
+        collisionSize: [40, 40]
       })
 
       // 创建信息窗体 (单例复用)
@@ -74,9 +79,23 @@ export function useMap() {
    * 绑定地图事件
    */
   const bindMapEvents = (map) => {
+    // 标记是否正在加载
+    let isLoading = false
+
     // 防抖加载函数
     const debouncedLoad = debounce(async () => {
-      await loadNodesInBounds(map)
+      // 如果已经在加载中，跳过这次请求
+      if (isLoading) {
+        console.log('⏳ 正在加载中，跳过本次请求')
+        return
+      }
+
+      try {
+        isLoading = true
+        await loadNodesSmart(map)
+      } finally {
+        isLoading = false
+      }
     }, 300)
 
     // 监听地图移动结束事件
@@ -87,26 +106,54 @@ export function useMap() {
 
     // 监听地图完成事件
     map.on('complete', debouncedLoad)
+
+    // 监听缩放开始事件，防止连续缩放触发多次请求
+    map.on('zoomstart', () => {
+      // 缩放开始时，取消任何待处理的加载请求
+      debouncedLoad.cancel()
+    })
   }
 
   /**
    * 加载初始节点数据
    */
   const loadInitialNodes = async (map) => {
-    const bounds = map.getBounds()
-    if (bounds) {
-      const sw = bounds.getSouthWest()
-      const ne = bounds.getNorthEast()
-
-      const boundsQuery = {
-        minLng: Math.max(-180, Math.min(180, sw.lng)),
-        maxLng: Math.max(-180, Math.min(180, ne.lng)),
-        minLat: Math.max(-90, Math.min(90, sw.lat)),
-        maxLat: Math.max(-90, Math.min(90, ne.lat)),
-        zoomLevel: Math.round(Math.max(1, Math.min(18, map.getZoom())))
+    try {
+      // 首次加载全量地图节点
+      if (!mapStore.fullMapNodes || mapStore.fullMapNodes.length === 0) {
+        console.log('📦 首次加载全量地图节点')
+        mapStore.fullMapNodes = await nodeApi.getAllMapNodes()
+        console.log(`📦 全量地图节点已加载，数量: ${mapStore.fullMapNodes.length}`)
       }
 
-      await loadNodesData(boundsQuery)
+      // 根据当前地图边界过滤节点
+      const bounds = map.getBounds()
+      if (bounds) {
+        const sw = bounds.getSouthWest()
+        const ne = bounds.getNorthEast()
+
+        const boundsQuery = {
+          minLng: Math.max(-180, Math.min(180, sw.lng)),
+          maxLng: Math.max(-180, Math.min(180, ne.lng)),
+          minLat: Math.max(-90, Math.min(90, sw.lat)),
+          maxLat: Math.max(-90, Math.min(90, ne.lat)),
+          zoomLevel: Math.round(Math.max(1, Math.min(18, map.getZoom())))
+        }
+
+        // 过滤可视区域内的节点
+        const visibleNodes = filterByBounds(mapStore.fullMapNodes, boundsQuery)
+
+        // 更新 Store 中的节点数据
+        mapStore.updateMapNodes(visibleNodes)
+
+        // 渲染标记
+        await createNodeMarkers(visibleNodes)
+
+        console.log(`🎯 显示 ${visibleNodes.length} 个节点 (缩放级别: ${boundsQuery.zoomLevel})`)
+      }
+    } catch (error) {
+      console.error('加载初始节点数据失败:', error)
+      ElMessage.error('节点数据加载失败')
     }
   }
 
@@ -142,6 +189,224 @@ export function useMap() {
   }
 
   /**
+   * 智能加载节点
+   * 使用全量地图节点数据，根据当前地图边界过滤显示
+   */
+  const loadNodesSmart = async (map) => {
+    try {
+      // 确保全量地图节点已加载
+      if (!mapStore.fullMapNodes || mapStore.fullMapNodes.length === 0) {
+        console.log('📦 首次加载全量地图节点')
+        mapStore.fullMapNodes = await nodeApi.getAllMapNodes()
+        console.log(`📦 全量地图节点已加载，数量: ${mapStore.fullMapNodes.length}`)
+      }
+
+      // 获取当前地图边界
+      const bounds = map.getBounds()
+      if (!bounds) return
+
+      const sw = bounds.getSouthWest()
+      const ne = bounds.getNorthEast()
+      const zoom = map.getZoom()
+      const zoomLevel = Math.round(Math.max(1, Math.min(18, zoom)))
+
+      const boundsQuery = {
+        minLng: Math.max(-180, Math.min(180, sw.lng)),
+        maxLng: Math.max(-180, Math.min(180, ne.lng)),
+        minLat: Math.max(-90, Math.min(90, sw.lat)),
+        maxLat: Math.max(-90, Math.min(90, ne.lat)),
+        zoomLevel
+      }
+
+      // 更新当前边界到 Store
+      mapStore.updateCurrentBounds(boundsQuery)
+
+      // 过滤可视区域内的节点
+      const visibleNodes = filterByBounds(mapStore.fullMapNodes, boundsQuery)
+
+      // 更新 Store 中的节点数据
+      mapStore.updateMapNodes(visibleNodes)
+
+      // 渲染标记（使用聚合机制）
+      await createNodeMarkers(visibleNodes)
+
+      console.log(`🎯 显示 ${visibleNodes.length} 个节点 (缩放级别: ${zoomLevel})`)
+    } catch (error) {
+      console.error('加载节点数据失败:', error)
+      ElMessage.error('节点数据加载失败')
+    }
+  }
+
+  /**
+   * 使用全量索引加载（低缩放级别）
+   */
+  const loadWithFullIndex = async (boundsQuery) => {
+    try {
+      // 首次加载全量索引
+      if (!mapStore.fullNodeIndex || mapStore.fullNodeIndex.length === 0) {
+        console.log('📦 首次加载全量节点索引')
+        mapStore.fullNodeIndex = await nodeApi.getAllNodesIndex()
+        console.log(`📦 全量节点索引已加载，数量: ${mapStore.fullNodeIndex.length}`)
+      }
+
+      // 根据缩放级别抽稀
+      const density = getDensityByZoom(boundsQuery.zoomLevel)
+      const nodes = thinOutNodes(mapStore.fullNodeIndex, boundsQuery, density)
+
+      // 更新 Store 中的节点数据
+      mapStore.updateMapNodes(nodes)
+
+      // 渲染标记
+      await createNodeMarkers(nodes)
+
+      console.log(`🎯 抽稀后显示 ${nodes.length} 个节点 (缩放级别: ${boundsQuery.zoomLevel}, 密度: ${density})`)
+    } catch (error) {
+      console.error('加载全量索引失败:', error)
+      ElMessage.error('节点数据加载失败')
+    }
+  }
+
+  /**
+   * 使用分级缓存加载（中等缩放级别）
+   */
+  const loadWithLevelCache = async (boundsQuery) => {
+    try {
+      // 计算缓存级别
+      const cacheLevel = calculateCacheLevel(boundsQuery.zoomLevel)
+
+      // 检查缓存
+      const cacheKey = `zoom_${cacheLevel}`
+      if (!mapStore.levelCache || !mapStore.levelCache[cacheKey]) {
+        console.log(`📦 从后端加载缩放级别 ${cacheLevel} 的节点`)
+        const nodes = await nodeApi.getNodesByZoomLevel(cacheLevel)
+
+        // 初始化缓存
+        if (!mapStore.levelCache) {
+          mapStore.levelCache = {}
+        }
+        mapStore.levelCache[cacheKey] = nodes
+
+        console.log(`📦 缩放级别 ${cacheLevel} 的节点已缓存，数量: ${nodes.length}`)
+      }
+
+      // 过滤可视区域
+      const nodes = filterByBounds(mapStore.levelCache[cacheKey], boundsQuery)
+
+      // 更新 Store 中的节点数据
+      mapStore.updateMapNodes(nodes)
+
+      // 渲染标记
+      await createNodeMarkers(nodes)
+
+      console.log(`🎯 显示 ${nodes.length} 个节点 (缩放级别: ${boundsQuery.zoomLevel}, 缓存级别: ${cacheLevel})`)
+    } catch (error) {
+      console.error('加载分级缓存失败:', error)
+      ElMessage.error('节点数据加载失败')
+    }
+  }
+
+  /**
+   * 节点抽稀算法
+   * 使用网格抽稀，避免节点重叠
+   */
+  const thinOutNodes = (nodes, boundsQuery, density) => {
+    // 过滤可视区域
+    const visibleNodes = nodes.filter(node => 
+      node.latitude >= boundsQuery.minLat &&
+      node.latitude <= boundsQuery.maxLat &&
+      node.longitude >= boundsQuery.minLng &&
+      node.longitude <= boundsQuery.maxLng
+    )
+
+    // 如果节点数量不多，不需要抽稀
+    if (visibleNodes.length <= density) {
+      return visibleNodes
+    }
+
+    // 网格抽稀
+    const gridSize = calculateGridSize(boundsQuery, density)
+    const grid = new Map()
+
+    visibleNodes.forEach(node => {
+      const gridKey = getGridKey(node, gridSize)
+      const existingNode = grid.get(gridKey)
+
+      // 网格内只保留优先级最高的节点
+      if (!existingNode || getNodePriority(node) > getNodePriority(existingNode)) {
+        grid.set(gridKey, node)
+      }
+    })
+
+    return Array.from(grid.values())
+  }
+
+  /**
+   * 计算网格大小
+   */
+  const calculateGridSize = (boundsQuery, density) => {
+    const latRange = boundsQuery.maxLat - boundsQuery.minLat
+    const lngRange = boundsQuery.maxLng - boundsQuery.minLng
+    const area = latRange * lngRange
+
+    // 根据区域面积和目标密度计算网格大小
+    const gridSize = Math.sqrt(area / density)
+    return Math.max(gridSize, 0.1) // 最小0.1度
+  }
+
+  /**
+   * 获取网格键
+   */
+  const getGridKey = (node, gridSize) => {
+    const latIndex = Math.floor(node.latitude / gridSize)
+    const lngIndex = Math.floor(node.longitude / gridSize)
+    return `${latIndex}_${lngIndex}`
+  }
+
+  /**
+   * 获取节点优先级
+   */
+  const getNodePriority = (node) => {
+    let priority = 0
+    if (node.nodeRank === 'Core') priority += 100
+    if (node.nodeRank === 'Active') priority += 50
+    if (node.affiliationType === 'System') priority += 30
+    if (node.isActive) priority += 20
+    return priority
+  }
+
+  /**
+   * 根据缩放级别获取目标密度
+   */
+  const getDensityByZoom = (zoomLevel) => {
+    if (zoomLevel <= 2) return 100   // 全球视图：100个节点
+    if (zoomLevel <= 4) return 300   // 大洲视图：300个节点
+    if (zoomLevel <= 6) return 500   // 国家视图：500个节点
+    return 800                           // 其他：800个节点
+  }
+
+  /**
+   * 计算缓存级别
+   */
+  const calculateCacheLevel = (zoomLevel) => {
+    if (zoomLevel <= 4) return 4
+    if (zoomLevel <= 6) return 6
+    if (zoomLevel <= 8) return 8
+    return 10
+  }
+
+  /**
+   * 过滤可视区域
+   */
+  const filterByBounds = (nodes, boundsQuery) => {
+    return nodes.filter(node => 
+      node.latitude >= boundsQuery.minLat &&
+      node.latitude <= boundsQuery.maxLat &&
+      node.longitude >= boundsQuery.minLng &&
+      node.longitude <= boundsQuery.maxLng
+    )
+  }
+
+  /**
    * 请求节点数据并渲染
    */
   const loadNodesData = async (query) => {
@@ -153,164 +418,309 @@ export function useMap() {
       // 更新 Store 中的节点数据
       mapStore.updateMapNodes(Array.isArray(nodes) ? nodes : [])
 
-      // 重新渲染标记
-      await createNodeMarkers(Array.isArray(nodes) ? nodes : [])
+      // 使用 requestAnimationFrame 确保在下一帧渲染，避免阻塞主线程
+      await new Promise(resolve => {
+        requestAnimationFrame(() => {
+          // 重新渲染标记
+          createNodeMarkers(Array.isArray(nodes) ? nodes : []).then(resolve)
+        })
+      })
 
       console.log(`🎯 加载了 ${nodes?.length || 0} 个节点 (缩放级别: ${query.zoomLevel})`)
     } catch (error) {
       console.error('加载节点数据失败:', error)
       ElMessage.error('节点数据加载失败')
     } finally {
-      mapStore.isMapLoading = false
+      // 使用 setTimeout 确保在所有渲染完成后才重置加载状态
+      setTimeout(() => {
+        mapStore.isMapLoading = false
+      }, 100)
     }
   }
 
   /**
-   * 创建节点标记 (使用定位图标)
+   * 创建节点标记 (使用LabelMarker实现聚合优化)
    */
   const createNodeMarkers = async (nodes) => {
     const { mapInstance, labelsLayer } = mapStore
     if (!labelsLayer || !mapInstance) return
 
-    // 清理旧的直接标记
-    if (mapStore.directMarkers) {
-      mapStore.directMarkers.forEach(marker => {
-        mapInstance.remove(marker)
-      })
-      mapStore.directMarkers = []
-    }
-
-    // 清除LabelMarker层
+    // 清除旧的标记
     labelsLayer.clear()
-
-    // 强制刷新图层渲染
-    await new Promise(resolve => setTimeout(resolve, 50))
 
     if (!Array.isArray(nodes) || nodes.length === 0) {
       return
     }
 
-    console.log(`🎨 开始创建 ${nodes.length} 个节点标记，使用新样式`)
+    console.log(`🎨 开始创建 ${nodes.length} 个节点标记，使用LabelMarker`)
 
-    // 批量创建标记
-    const markers = [] // LabelMarker数组（文本）
-    const directMarkers = [] // 直接Marker数组（图标）
+    // 获取当前缩放级别
+    const zoomLevel = mapInstance.getZoom()
+
+    // 根据缩放级别决定是否聚合
+    const shouldCluster = zoomLevel <= 6
+
+    if (shouldCluster) {
+      // 聚合状态：使用聚合标记
+      await createClusterMarkers(nodes, zoomLevel)
+    } else {
+      // 散列状态：直接渲染所有节点
+      await createLabelMarkers(nodes)
+    }
+  }
+
+  /**
+   * 创建聚合标记（低缩放级别）
+   */
+  const createClusterMarkers = async (nodes, zoomLevel) => {
+    const { labelsLayer } = mapStore
+
+    // 计算网格大小，根据缩放级别动态调整
+    const gridSize = getClusterGridSize(zoomLevel)
+
+    // 创建聚合网格
+    const clusters = new Map()
 
     nodes.forEach(node => {
       if (!node.longitude || !node.latitude) return
 
-      // 根据节点状态选择颜色
-      const color = getNodeColor(node)
-      const size = getNodeSize(node)
-      const strokeColor = getStrokeColor(node)
+      // 计算网格键
+      const latIndex = Math.floor(node.latitude / gridSize)
+      const lngIndex = Math.floor(node.longitude / gridSize)
+      const gridKey = `${latIndex}_${lngIndex}`
 
-      // 创建定位图标样式的SVG
-      const createLocationIcon = (fillColor, strokeColor, size) => {
-        const svgSize = size * 2.5
-        const shadowId = `shadow-${node.nodeId}-${Math.random().toString(36).substr(2, 9)}`
-        return `
-          <svg width="${svgSize}" height="${svgSize}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-              <filter id="${shadowId}" x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow dx="1" dy="2" stdDeviation="2" flood-opacity="0.3"/>
-              </filter>
-            </defs>
-            <!-- 定位图标主体 -->
-            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
-                  fill="${fillColor}"
-                  stroke="${strokeColor}"
-                  stroke-width="2"
-                  filter="url(#${shadowId})"/>
-            <!-- 内部圆点 -->
-            <circle cx="12" cy="9" r="2.5" fill="${strokeColor}" opacity="0.8"/>
-          </svg>
-        `.trim()
+      // 获取或创建聚合点
+      let cluster = clusters.get(gridKey)
+      if (!cluster) {
+        cluster = {
+          centerLat: node.latitude,
+          centerLng: node.longitude,
+          nodes: [],
+          count: 0,
+          isActive: false
+        }
+        clusters.set(gridKey, cluster)
       }
 
-      const svgIcon = createLocationIcon(color, strokeColor, size)
+      // 更新聚合点
+      cluster.nodes.push(node)
+      cluster.count++
+      cluster.centerLat = (cluster.centerLat * (cluster.count - 1) + node.latitude) / cluster.count
+      cluster.centerLng = (cluster.centerLng * (cluster.count - 1) + node.longitude) / cluster.count
 
-      // 使用Marker代替LabelMarker来支持自定义SVG图标
-      const marker = new AMap.Marker({
-        position: [node.longitude, node.latitude],
-        content: `<div style="transform: translate(-50%, -100%); cursor: pointer;">${svgIcon}</div>`,
-        zIndex: getNodeZIndex(node),
-        anchor: 'bottom-center'
-      })
+      // 更新状态
+      if (node.isActive) cluster.isActive = true
+    })
 
-      // 创建LabelMarker用于显示文本（如果需要的话）
-      const textMarker = new AMap.LabelMarker({
-        position: [node.longitude, node.latitude],
-        zIndex: getNodeZIndex(node) - 1,
-        // 添加唯一ID
-        id: `text-${node.nodeId}-${Date.now()}-${Math.random()}`,
+    // 创建聚合标记
+    const markers = []
+    clusters.forEach((cluster, key) => {
+      const color = cluster.isActive ? '#00D084' : '#BDC3C7'
+      const size = getClusterSize(cluster.count)
+
+      // 创建定位图标SVG
+      const svgIcon = getClusterIconUrl(color, size)
+
+      const marker = new AMap.LabelMarker({
+        position: [cluster.centerLng, cluster.centerLat],
+        zIndex: cluster.isActive ? 100 : 1,
         icon: {
-          type: 'circle',
-          size: 1, // 极小的透明图标
-          fillColor: 'transparent',
-          fillOpacity: 0,
-          strokeColor: 'transparent',
-          strokeWidth: 0,
+          type: 'image',
+          image: svgIcon,
+          size: [size * 2, size * 2],
           anchor: 'center'
-        },
-        text: {
-          content: node.callsign || node.nodeId?.toString() || '',
-          direction: 'bottom',
-          offset: [0, 15],
-          style: {
-            fontSize: 11,
-            fontWeight: 'bold',
-            fillColor: '#2c3e50',
-            strokeColor: '#ffffff',
-            strokeWidth: 3,
-            fontFamily: 'Arial, sans-serif',
-            textShadow: '1px 1px 2px rgba(0,0,0,0.3)'
-          }
         }
       })
 
-      // 绑定主图标的点击事件
+      // 绑定点击事件
       marker.on('click', () => {
-        showNodeInfo(node, [node.longitude, node.latitude])
-        mapStore.setSelectedNode(node)
+        // 聚合点点击时，可以展开显示该区域内的所有节点
+        console.log(`聚合点点击，包含 ${cluster.count} 个节点`)
       })
 
-      // 绑定文本标记的点击事件
-      textMarker.on('click', () => {
-        showNodeInfo(node, [node.longitude, node.latitude])
-        mapStore.setSelectedNode(node)
-      })
-
-      // 添加到地图（直接添加，不通过LabelLayer）
-      mapInstance.add(marker)
-
-      // 分别收集不同类型的标记
-      directMarkers.push(marker) // 收集图标标记
-      markers.push(textMarker) // 收集文本标记
+      markers.push(marker)
     })
 
     // 批量添加到图层
     labelsLayer.add(markers)
 
-    await nextTick()
+    console.log(`📍 已创建 ${markers.length} 个聚合标记，覆盖 ${nodes.length} 个节点`)
+  }
 
-    // 保存直接添加到地图的标记引用（用于下次清理）
-    mapStore.directMarkers = directMarkers
+  /**
+   * 创建散列标记（高缩放级别）
+   */
+  const createLabelMarkers = async (nodes) => {
+    const { labelsLayer } = mapStore
 
-    console.log(`📍 已创建 ${directMarkers.length} 个定位图标 + ${markers.length} 个文本标记`)
+    // 分批创建标记
+    const markers = []
+    const batchSize = 500
+    let currentIndex = 0
+
+    const processBatch = () => {
+      const endIndex = Math.min(currentIndex + batchSize, nodes.length)
+
+      for (let i = currentIndex; i < endIndex; i++) {
+        const node = nodes[i]
+        if (!node.longitude || !node.latitude) continue
+
+        const color = getNodeColor(node)
+        const size = getNodeSize(node)
+
+        // 创建定位图标SVG
+        const svgIcon = getNodeIconUrl(color, size)
+
+        const marker = new AMap.LabelMarker({
+          position: [node.longitude, node.latitude],
+          zIndex: getNodeZIndex(node),
+          icon: {
+            type: 'image',
+            image: svgIcon,
+            size: [size * 2, size * 2],
+            anchor: 'center'
+          },
+          text: {
+            content: node.callsign || node.nodeId?.toString() || '',
+            direction: 'bottom',
+            offset: [0, size + 2],
+            style: {
+              fontSize: 11,
+              fontWeight: 'bold',
+              fillColor: '#2c3e50',
+              strokeColor: '#ffffff',
+              strokeWidth: 2
+            }
+          }
+        })
+
+        marker.on('click', () => {
+          showNodeInfo(node, [node.longitude, node.latitude])
+          mapStore.setSelectedNode(node)
+        })
+
+        markers.push(marker)
+      }
+
+      currentIndex = endIndex
+
+      if (currentIndex < nodes.length) {
+        requestAnimationFrame(processBatch)
+      } else {
+        labelsLayer.add(markers)
+        console.log(`📍 已创建 ${markers.length} 个散列标记`)
+      }
+    }
+
+    processBatch()
+  }
+
+  /**
+   * 获取聚合网格大小
+   */
+  const getClusterGridSize = (zoomLevel) => {
+    if (zoomLevel <= 3) return 10   // 全球视图：10度网格
+    if (zoomLevel <= 5) return 5    // 大洲视图：5度网格
+    if (zoomLevel <= 6) return 2    // 国家视图：2度网格
+    return 1                         // 其他：1度网格
+  }
+
+  /**
+   * 获取聚合标记大小（根据节点数量动态调整）
+   */
+  const getClusterSize = (count) => {
+    if (count <= 5) return 20
+    if (count <= 10) return 25
+    if (count <= 20) return 30
+    if (count <= 50) return 35
+    if (count <= 100) return 40
+    if (count <= 200) return 45
+    if (count <= 500) return 50
+    if (count <= 1000) return 55
+    if (count <= 2000) return 60
+    return 65
+  }
+
+  /**
+   * 获取聚合标记颜色
+   */
+  const getClusterColor = (cluster) => {
+    // 聚合标记中有活跃节点显示为绿色，否则显示为灰色
+    return cluster.isActive ? '#00D084' : '#BDC3C7'
+  }
+
+  /**
+   * 获取聚合图标URL（使用base64编码的SVG）
+   */
+  const getClusterIconUrl = (color, size) => {
+    const svgSize = size * 2
+    // 根据大小调整内部圆点的大小
+    const innerCircleRadius = Math.max(2, Math.min(4, size / 10))
+    const strokeWidth = Math.max(2, Math.min(3, size / 15))
+
+    const svg = `
+      <svg width="${svgSize}" height="${svgSize}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="1" dy="2" stdDeviation="2" flood-opacity="0.3"/>
+          </filter>
+        </defs>
+        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
+              fill="${color}"
+              stroke="#ffffff"
+              stroke-width="${strokeWidth}"
+              filter="url(#shadow)"/>
+        <circle cx="12" cy="9" r="${innerCircleRadius}" fill="#ffffff" opacity="0.8"/>
+      </svg>
+    `.trim()
+
+    return 'data:image/svg+xml;base64,' + btoa(svg)
+  }
+
+  /**
+   * 获取聚合字体大小
+   */
+  const getClusterFontSize = (count) => {
+    if (count <= 10) return 12
+    if (count <= 50) return 14
+    if (count <= 100) return 16
+    if (count <= 500) return 18
+    return 20
+  }
+
+  /**
+   * 获取节点图标URL（使用base64编码的SVG）
+   */
+  const getNodeIconUrl = (color, size) => {
+    const svgSize = size * 2
+    const svg = `
+      <svg width="${svgSize}" height="${svgSize}" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="1" dy="2" stdDeviation="2" flood-opacity="0.3"/>
+          </filter>
+        </defs>
+        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"
+              fill="${color}"
+              stroke="#ffffff"
+              stroke-width="2"
+              filter="url(#shadow)"/>
+        <circle cx="12" cy="9" r="2.5" fill="#ffffff" opacity="0.8"/>
+      </svg>
+    `.trim()
+
+    return 'data:image/svg+xml;base64,' + btoa(svg)
   }
 
   /**
    * 获取节点颜色
    */
   const getNodeColor = (node) => {
-    if (!node.isActive) return '#BDC3C7' // 浅灰色-离线
+    // 离线节点显示为灰色
+    if (!node.isActive) return '#BDC3C7'
 
-    switch (node.nodeRank) {
-      case 'Core': return '#FF6B35' // 鲜橙色-核心
-      case 'Active': return '#00D084' // 鲜绿色-活跃
-      case 'Transient': return '#3B82F6' // 鲜蓝色-临时
-      default: return '#BDC3C7'
-    }
+    // 在线节点统一显示为绿色
+    return '#00D084'
   }
 
   /**
@@ -345,14 +755,8 @@ export function useMap() {
    * 获取节点层级
    */
   const getNodeZIndex = (node) => {
-    if (!node.isActive) return 1
-
-    switch (node.nodeRank) {
-      case 'Core': return 100
-      case 'Active': return 50
-      case 'Transient': return 10
-      default: return 1
-    }
+    // 在线节点的层级高于离线节点
+    return node.isActive ? 100 : 1
   }
 
   /**
@@ -798,6 +1202,7 @@ export function useMap() {
   return {
     initializeMap,
     loadNodesInBounds,
+    loadNodesSmart,
     createNodeMarkers,
     showNodeInfo,
     panToLocation,

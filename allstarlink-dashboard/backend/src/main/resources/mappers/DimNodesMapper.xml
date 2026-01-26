@@ -364,4 +364,125 @@
         GROUP BY node_id
     </select>
 
+    <!-- ======================= 缓存优化相关方法 ======================= -->
+
+    <!-- 查询全量节点索引（轻量级，仅包含ID和位置） -->
+    <select id="selectAllNodesIndex" resultType="com.allstarlink.dashboard.vo.NodeIndexVO">
+        SELECT
+            node_id as nodeId,
+            callsign,
+            latitude,
+            longitude,
+            is_active as isActive,
+            node_rank as nodeRank,
+            affiliation_type as affiliationType,
+            country
+        FROM dim_nodes
+        WHERE latitude IS NOT NULL
+        AND longitude IS NOT NULL
+        ORDER BY
+            CASE
+                WHEN node_rank = 'Core' THEN 1
+                WHEN node_rank = 'Active' THEN 2
+                ELSE 3
+            END,
+            CASE
+                WHEN affiliation_type = 'System' THEN 1
+                WHEN affiliation_type = 'Club' THEN 2
+                ELSE 3
+            END
+    </select>
+
+    <!-- 根据缩放级别查询节点 -->
+    <select id="selectNodesByZoomLevel" resultType="com.allstarlink.dashboard.vo.MapNodeVO">
+        SELECT
+            node_id as nodeId,
+            callsign,
+            latitude,
+            longitude,
+            is_active as isActive,
+            node_rank as nodeRank,
+            affiliation_type as affiliationType,
+            country
+        FROM dim_nodes
+        WHERE latitude IS NOT NULL
+        AND longitude IS NOT NULL
+        AND is_active = 1
+        <choose>
+            <!-- 缩放级别4：仅返回核心节点 -->
+            <when test="zoomLevel == 4">
+                AND node_rank IN ('Core', 'Active')
+                AND (affiliation_type = 'System' OR node_rank = 'Core')
+            </when>
+            <!-- 缩放级别6：返回核心和活跃节点 -->
+            <when test="zoomLevel == 6">
+                AND node_rank IN ('Core', 'Active', 'Transient')
+            </when>
+            <!-- 缩放级别8：返回所有活跃节点 -->
+            <when test="zoomLevel == 8">
+            </when>
+            <!-- 缩放级别10：返回更多节点 -->
+            <when test="zoomLevel == 10">
+            </when>
+        </choose>
+        ORDER BY
+            CASE
+                WHEN node_rank = 'Core' THEN 1
+                WHEN node_rank = 'Active' THEN 2
+                ELSE 3
+            END,
+            CASE
+                WHEN affiliation_type = 'System' THEN 1
+                WHEN affiliation_type = 'Club' THEN 2
+                ELSE 3
+            END
+        <choose>
+            <!-- 缩放级别4：仅返回核心节点 -->
+            <when test="zoomLevel == 4">
+                LIMIT 500
+            </when>
+            <!-- 缩放级别6：返回核心和活跃节点 -->
+            <when test="zoomLevel == 6">
+                LIMIT 1000
+            </when>
+            <!-- 缩放级别8：返回所有活跃节点 -->
+            <when test="zoomLevel == 8">
+                LIMIT 2000
+            </when>
+            <!-- 缩放级别10：返回更多节点 -->
+            <when test="zoomLevel == 10">
+                LIMIT 3000
+            </when>
+        </choose>
+    </select>
+
+    <!-- 查询所有经纬度不为0的节点（用于地图展示） -->
+    <select id="selectAllMapNodes" resultType="com.allstarlink.dashboard.vo.MapNodeVO">
+        SELECT
+            node_id as nodeId,
+            callsign,
+            latitude,
+            longitude,
+            is_active as isActive,
+            node_rank as nodeRank,
+            affiliation_type as affiliationType,
+            country
+        FROM dim_nodes
+        WHERE latitude IS NOT NULL
+        AND longitude IS NOT NULL
+        AND latitude != 0
+        AND longitude != 0
+        ORDER BY
+            CASE
+                WHEN node_rank = 'Core' THEN 1
+                WHEN node_rank = 'Active' THEN 2
+                ELSE 3
+            END,
+            CASE
+                WHEN affiliation_type = 'System' THEN 1
+                WHEN affiliation_type = 'Club' THEN 2
+                ELSE 3
+            END
+    </select>
+
 </mapper>

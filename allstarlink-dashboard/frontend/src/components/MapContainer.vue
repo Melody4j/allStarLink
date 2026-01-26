@@ -93,6 +93,7 @@ const currentZoomLevel = ref(2)
 const {
   initializeMap,
   loadNodesInBounds,
+  loadNodesSmart,
   createNodeMarkers,
   showNodeInfo,
   panToLocation,
@@ -115,6 +116,10 @@ const updateZoomLevel = () => {
     currentZoomLevel.value = mapStore.mapInstance.getZoom()
   }
 }
+
+// 滚轮缩放状态标记
+let isWheelZooming = false
+let wheelZoomTimeout = null
 
 // 强制刷新地图标记
 const handleForceRefresh = async () => {
@@ -167,8 +172,46 @@ onMounted(async () => {
 
       // 阻止触摸和滚轮事件的默认行为
       mapElement.addEventListener('touchmove', preventScroll, { passive: false })
-      mapElement.addEventListener('wheel', preventScroll, { passive: false })
-      mapElement.addEventListener('scroll', preventScroll, { passive: false })
+
+      // 优化滚轮事件处理，使用状态标记防止页面滚动
+      mapElement.addEventListener('wheel', (e) => {
+        // 检查鼠标是否在地图容器内
+        const rect = mapElement.getBoundingClientRect()
+        const isInMap = e.clientX >= rect.left && 
+                        e.clientX <= rect.right && 
+                        e.clientY >= rect.top && 
+                        e.clientY <= rect.bottom
+
+        if (isInMap) {
+          // 标记正在缩放
+          isWheelZooming = true
+
+          // 清除之前的超时
+          if (wheelZoomTimeout) {
+            clearTimeout(wheelZoomTimeout)
+          }
+
+          // 设置新的超时，在缩放结束后重置状态
+          wheelZoomTimeout = setTimeout(() => {
+            isWheelZooming = false
+          }, 500)
+
+          // 阻止默认行为和事件冒泡
+          e.preventDefault()
+          e.stopPropagation()
+          e.stopImmediatePropagation()
+          return false
+        }
+      }, { passive: false })
+
+      mapElement.addEventListener('scroll', (e) => {
+        // 如果正在滚轮缩放，阻止滚动事件
+        if (isWheelZooming) {
+          e.preventDefault()
+          e.stopPropagation()
+          return false
+        }
+      }, { passive: false })
     }
   }
 })

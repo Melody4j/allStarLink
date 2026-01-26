@@ -134,6 +134,56 @@ class NodeApi {
     const response = await apiClient.get('/api/nodes/health')
     return response
   }
+
+  // ======================= 缓存优化相关API =======================
+
+  /**
+   * 获取全量节点索引
+   * 用于低缩放级别的节点抽稀
+   * @returns {Promise<Array>} 全量节点索引列表
+   */
+  async getAllNodesIndex() {
+    const response = await apiClient.get('/api/nodes/cache/index')
+    return response
+  }
+
+  /**
+   * 根据缩放级别获取节点
+   * @param {number} zoomLevel - 缩放级别
+   * @returns {Promise<Array>} 节点列表
+   */
+  async getNodesByZoomLevel(zoomLevel) {
+    const response = await apiClient.get(`/api/nodes/cache/zoom/${zoomLevel}`)
+    return response
+  }
+
+  /**
+   * 刷新全量节点缓存
+   * @returns {Promise<string>} 操作结果
+   */
+  async refreshAllNodesCache() {
+    const response = await apiClient.post('/api/nodes/cache/refresh/index')
+    return response
+  }
+
+  /**
+   * 刷新指定缩放级别的缓存
+   * @param {number} zoomLevel - 缩放级别
+   * @returns {Promise<string>} 操作结果
+   */
+  async refreshZoomLevelCache(zoomLevel) {
+    const response = await apiClient.post(`/api/nodes/cache/refresh/zoom/${zoomLevel}`)
+    return response
+  }
+
+  /**
+   * 获取所有地图节点（全量，用于前端地图展示）
+   * @returns {Promise<Array>} 所有地图节点列表
+   */
+  async getAllMapNodes() {
+    const response = await apiClient.get('/api/nodes/cache/map/all')
+    return response
+  }
 }
 
 // 创建实例并导出
@@ -150,6 +200,13 @@ export const getDistributionByCountry = () => nodeApi.getDistributionByCountry()
 export const getStatsOverview = () => nodeApi.getStatsOverview()
 export const getGlobalStats = () => nodeApi.getGlobalStats()
 export const healthCheck = () => nodeApi.healthCheck()
+
+// 缓存优化相关API
+export const getAllNodesIndex = () => nodeApi.getAllNodesIndex()
+export const getNodesByZoomLevel = (zoomLevel) => nodeApi.getNodesByZoomLevel(zoomLevel)
+export const refreshAllNodesCache = () => nodeApi.refreshAllNodesCache()
+export const refreshZoomLevelCache = (zoomLevel) => nodeApi.refreshZoomLevelCache(zoomLevel)
+export const getAllMapNodes = () => nodeApi.getAllMapNodes()
 
 // 兼容性：保留原有的API函数名
 export const getAllNodes = () => nodeApi.getNodeListByPage({ current: 1, size: 10000 })
