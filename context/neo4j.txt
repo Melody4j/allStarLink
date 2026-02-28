@@ -1,0 +1,255 @@
+根据当前的爬虫脚本，设置一个新的获取节点拓扑数据的功能，跟随脚本中ods层爬取操作一起，拓扑数据的存储引擎为neo4j，neo4j的地址以及账号密码为：121.41.230.15:7687 root 0595;
+neo4j中 节点 (Node) 属性定义
+标签：:Node
+唯一标识：node_id (INT) — 必须建立唯一性约束。
+基础画像：callsign (呼号), node_type (Public/Private)。
+地理坐标：lat (纬度), lon (经度) — 用于全球分布分析。
+活跃指标：uptime (秒), total_keyups (累计按下 PTT 次数), total_tx_time (累计发射时长)。
+时效信息：last_seen (最后更新时间)。
+2. 关系 (Relationship) 属性定义
+类型：[:CONNECTED_TO]
+状态：status (Active/Inactive)。
+链路特征：direction (连接模式), ping_ms (网络延迟)。
+时间戳：established_at (建立连接的时间)。
+3. 核心画像分析维度
+社交拓扑：通过 degree (出入度) 识别全球核心 Hub 节点。
+稳定性：利用 uptime 重置频率评估节点的网络与硬件质量。
+活跃权重：将 total_keyups 作为节点大小（权重），识别最繁忙的语音社区。
+
+获取节点详细数据以及拓扑数据的api为：
+https://stats.allstarlink.org/api/stats/{node_number}
+node_number为节点号Node
+获取的数据示例：
+{
+	"stats": {
+		"id": 285,
+		"node": 2000,
+		"data": {
+			"apprptuptime": "1170520",
+			"totalexecdcommands": "0",
+			"totalkeyups": "5007",
+			"totaltxtime": "125298",
+			"apprptvers": "3.7.1",
+			"timeouts": "0",
+			"links": [
+				"62340",
+				"68245"
+			],
+			"keyed": false,
+			"time": "1772272949",
+			"seqno": "39088",
+			"nodes": "T62340,T68245",
+			"totalkerchunks": "0",
+			"keytime": "1170530",
+			"linkedNodes": [
+				{
+					"Node_ID": 77831,
+					"User_ID": "WW8L",
+					"Status": "Active",
+					"name": 62340,
+					"ipaddr": "73.153.4.64",
+					"port": 4569,
+					"regseconds": 1772272727,
+					"iptime": "2026-01-28 08:46:10",
+					"node_frequency": "",
+					"node_tone": "",
+					"node_remotebase": false,
+					"node_freqagile": "0",
+					"callsign": "WW8L",
+					"access_reverseautopatch": "0",
+					"access_telephoneportal": "1",
+					"access_webtransceiver": "1",
+					"access_functionlist": "0",
+					"is_nnx": "No",
+					"server": {
+						"Server_ID": 45941,
+						"User_ID": "WW8L",
+						"Server_Name": "WW8L-1",
+						"Affiliation": "",
+						"SiteName": "",
+						"Logitude": "-104.94639",
+						"Latitude": "40.477859",
+						"Location": "Windsor, CO",
+						"TimeZone": null,
+						"udpport": 4569,
+						"proxy_ip": null
+					}
+				},
+				{
+					"Node_ID": 93514,
+					"User_ID": "KA8HKC",
+					"Status": "Active",
+					"name": 68245,
+					"ipaddr": "75.188.7.24",
+					"port": 4569,
+					"regseconds": 1772270000,
+					"iptime": "2026-02-05 22:50:35",
+					"node_frequency": "",
+					"node_tone": "",
+					"node_remotebase": false,
+					"node_freqagile": "0",
+					"callsign": "KA8HKC",
+					"access_reverseautopatch": "0",
+					"access_telephoneportal": "0",
+					"access_webtransceiver": "0",
+					"access_functionlist": "0",
+					"is_nnx": "No",
+					"server": {
+						"Server_ID": 54045,
+						"User_ID": "KA8HKC",
+						"Server_Name": "ASL-KA8HKC",
+						"Affiliation": "",
+						"SiteName": "Newark, Ohio",
+						"Logitude": "-82.386957",
+						"Latitude": "40.075309",
+						"Location": "Newark, Ohio",
+						"TimeZone": null,
+						"udpport": 4569,
+						"proxy_ip": null
+					}
+				}
+			]
+		},
+		"created_at": "2021-03-22T01:21:18.000000Z",
+		"updated_at": "2026-02-28T10:02:29.000000Z",
+		"user_node": {
+			"Node_ID": 3108,
+			"User_ID": "WB6NIL",
+			"Status": "Active",
+			"name": 2000,
+			"ipaddr": "18.224.69.177",
+			"port": 4569,
+			"regseconds": 1771094145,
+			"iptime": "2025-11-24 02:43:17",
+			"node_frequency": "ASL Public Hub",
+			"node_tone": "",
+			"node_remotebase": false,
+			"node_freqagile": "0",
+			"callsign": "WB6NIL",
+			"access_reverseautopatch": "0",
+			"access_telephoneportal": "1",
+			"access_webtransceiver": "1",
+			"access_functionlist": "0",
+			"is_nnx": "No",
+			"server": {
+				"Server_ID": 23,
+				"User_ID": "WB6NIL",
+				"Server_Name": "LA HUB",
+				"Affiliation": "AllStarLink",
+				"SiteName": "AllStarLink",
+				"Logitude": "-118.244648",
+				"Latitude": "34.051730",
+				"Location": "Los Angeles, CA",
+				"TimeZone": "-8.0",
+				"udpport": 4569,
+				"proxy_ip": null
+			}
+		}
+	},
+	"node": {
+		"Node_ID": 3108,
+		"User_ID": "WB6NIL",
+		"Status": "Active",
+		"name": 2000,
+		"ipaddr": "18.224.69.177",
+		"port": 4569,
+		"regseconds": 1772271872,
+		"iptime": "2025-11-24 02:43:17",
+		"node_frequency": "ASL Public Hub",
+		"node_tone": "",
+		"node_remotebase": false,
+		"node_freqagile": "0",
+		"callsign": "WB6NIL",
+		"access_reverseautopatch": "0",
+		"access_telephoneportal": "1",
+		"access_webtransceiver": "1",
+		"access_functionlist": "0",
+		"is_nnx": "No",
+		"server": {
+			"Server_ID": 23,
+			"User_ID": "WB6NIL",
+			"Server_Name": "LA HUB",
+			"Affiliation": "AllStarLink",
+			"SiteName": "AllStarLink",
+			"Logitude": "-118.244648",
+			"Latitude": "34.051730",
+			"Location": "Los Angeles, CA",
+			"TimeZone": "-8.0",
+			"udpport": 4569,
+			"proxy_ip": null
+		}
+	},
+	"keyups": [],
+	"time": 2.106904983520508
+}
+关键字段含义说明：
+{
+  "stats": {
+    "id": 285,                       // [内部ID] 官方数据库自增流水号，非业务主键
+    "node": 2000,                    // [业务主键] 当前查询的目标节点号 (Node Number)
+    "data": {
+      /* --- 核心活跃度与稳定性维度 --- */
+      "apprptuptime": "1170520",     // [稳定性] 软件进程运行秒数。画像逻辑：数值持续增长代表稳定；数值变小代表重启（重启频率反映可靠性）。
+      "totalexecdcommands": "0",     // [交互度] 累计执行的远程指令数。
+      "totalkeyups": "5007",         // [热度指标] 累计按下PTT(打火)次数。画像逻辑：衡量节点的社交活跃频率。
+      "totaltxtime": "125298",       // [贡献指标] 累计发射语音时长(秒)。画像逻辑：衡量节点对网络的语音产出量。
+      "apprptvers": "3.7.1",         // [技术画像] 软件版本号。枚举意义：0.x(旧版/ACID), 1.x/2.x(主流), 3.x(最新ASL3)。
+      "timeouts": "0",               // [异常指标] 发生的超时中断次数。
+      "keyed": false,                // [实时状态] 当前是否正在发射语音。
+      "time": "1772272949",          // [时间戳] 数据采集的 Unix 时间戳。
+      "seqno": "39088",              // [序列号] 统计报文序号，用于检测数据包是否丢失。
+      
+      /* --- 拓扑关系维度 --- */
+      "links": [ "62340", "68245" ], // [简单连接] 当前在线连接的节点号列表。
+      "nodes": "T62340,T68245",      // [连接模式字典] 格式：[前缀][节点号]。
+                                     /* 枚举字典(Prefix): 
+                                        T: Transceive (双向收发，标准模式)
+                                        R: RX Only (仅接收，潜水/监听模式)
+                                        L: Local (本地链路，通常指同服务器不同端口)
+                                        P: Permanent (永久连接，配置文件锁定的骨干链路) */
+      
+      "linkedNodes": [               // [关联对象列表] 被连接节点的详细画像数据
+        {
+          "Node_ID": 77831,          // 官方后台ID
+          "name": 62340,             // [重要] 真正的业务节点号。画像逻辑：用此字段在图中建立 Edge 指向。
+          "callsign": "WW8L",        // [身份] 电台呼号。
+          "ipaddr": "73.153.4.64",   // [网络] 节点公网IP。画像逻辑：可用于判定 IDC 或家庭宽带分布。
+          "regseconds": 1772272727,  // [注册时效] 节点最后一次上报心跳的时间戳。
+          "node_frequency": "",      // [分类] 频率描述。画像关键词：'Hub'(枢纽), 'Bridge'(桥接), 'Repeater'(中继)。
+          "is_nnx": "No",            // [协议枚举] 是否使用NNX新型路由。枚举：Yes, No。
+          "access_telephoneportal": "1", // [功能枚举] 是否开启电话拨入。1:开启, 0:关闭。
+          "access_webtransceiver": "1",  // [功能枚举] 是否开启网页对讲。1:开启, 0:关闭。
+          "server": {
+            "Affiliation": "",       // [社群] 所属无线电组织或俱乐部。
+            "Location": "Windsor, CO", // [地理] 物理位置文本。
+            "Logitude": "-104.94639", // [地理] 经度。
+            "Latitude": "40.477859",  // [地理] 纬度。
+            "TimeZone": null          // [行为画像] 时区偏移。用于计算该用户当地时间的活跃高峰。
+          }
+        }
+      ]
+    },
+    "updated_at": "2026-02-28T10:02:29.000000Z", // 本条画像数据的最后同步时间
+    "user_node": {                   // [主节点静态画像] 查询目标(2000)的注册资料
+      "name": 2000,
+      "callsign": "WB6NIL",
+      "node_frequency": "ASL Public Hub", // 画像标签建议：'Public Infrastructure'
+      "server": {
+        "Affiliation": "AllStarLink",
+        "Location": "Los Angeles, CA",
+        "TimeZone": "-8.0"
+      }
+    }
+  },
+  "calculated_metrics_guide": {      /* --- 画像二次计算建议指标 --- */
+    "Avg_Talk_Time": "totaltxtime / totalkeyups", // 平均单次发言时长。判断是“长篇大论型”还是“简短指令型”。
+    "Stability_Score": "log(apprptuptime)",       // 稳定性评分。
+    "Traffic_Weight": "totalkeyups * weight",    // 流量权重，决定在拓扑图中节点的大小。
+    "Role_Label": "CASE WHEN nodes LIKE 'R%' THEN 'Listener' ELSE 'Active_User' END" // 角色标签判定。
+  }
+}
+
+最新的
+操作说明：
+
+
