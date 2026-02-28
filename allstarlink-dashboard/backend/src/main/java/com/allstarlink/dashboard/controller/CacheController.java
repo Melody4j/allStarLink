@@ -28,9 +28,6 @@ public class CacheController {
     public ResponseEntity<Map<String, Object>> clearNodeCache() {
         log.info("收到清除节点缓存请求");
         Map<String, Object> result = new HashMap<>();
-
-
-
         return ResponseEntity.ok(result);
     }
 
@@ -41,8 +38,6 @@ public class CacheController {
     public ResponseEntity<Map<String, Object>> clearSingleNodeCache(@PathVariable Integer nodeId) {
         log.info("收到清除单个节点缓存请求: nodeId={}", nodeId);
         Map<String, Object> result = new HashMap<>();
-
-
         return ResponseEntity.ok(result);
     }
 

@@ -5,6 +5,10 @@ import router from './router'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import 'leaflet/dist/leaflet.css'
+import './styles/theme.css'
+import './styles/element-theme.css'
+import './styles/table-fix.css'
+import './styles/global-overrides.css'
 
 // 创建Vue应用实例
 const app = createApp(App)

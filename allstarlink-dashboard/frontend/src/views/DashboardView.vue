@@ -435,6 +435,31 @@ onMounted(() => {
   color: #606266;
 }
 
+/* 修复节点详情对话框透明度问题 */
+:deep(.el-dialog) {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+}
+
+:deep(.el-dialog__header) {
+  background-color: rgba(249, 250, 251, 0.95);
+  border-radius: 12px 12px 0 0;
+  backdrop-filter: blur(10px);
+}
+
+:deep(.el-dialog__body) {
+  background-color: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(5px);
+}
+
+:deep(.el-dialog__footer) {
+  background-color: rgba(249, 250, 251, 0.95);
+  border-radius: 0 0 12px 12px;
+  backdrop-filter: blur(10px);
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .dashboard {
