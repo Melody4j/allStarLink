@@ -1,4 +1,9 @@
-根据当前的爬虫脚本，设置一个新的获取节点拓扑数据的功能，跟随脚本中ods层爬取操作一起，拓扑数据的存储引擎为neo4j，neo4j的地址以及账号密码为：121.41.230.15:7687 root 0595;
+角色： 你是一个高级后端架构师，专精于分布式爬虫和图数据库（Neo4j）实时同步。
+任务： 请根据以下策略编写一个 Python 异步爬虫框架，用于构建 AllStarLink 全球用户画像。
+
+根据当前的爬虫脚本，设置一个新的获取节点拓扑数据的功能，拓扑数据的存储引擎为neo4j，
+neo4j的地址以及账号密码为：121.41.230.15:7687 neo4j 0595;
+redis的地址以及账号密码为：121.41.230.15:6379 root 0595;
 neo4j中 节点 (Node) 属性定义
 标签：:Node
 唯一标识：node_id (INT) — 必须建立唯一性约束。
@@ -17,8 +22,7 @@ neo4j中 节点 (Node) 属性定义
 活跃权重：将 total_keyups 作为节点大小（权重），识别最繁忙的语音社区。
 
 获取节点详细数据以及拓扑数据的api为：
-https://stats.allstarlink.org/api/stats/{node_number}
-node_number为节点号Node
+https://stats.allstarlink.org/api/stats/{node_number} node_number为节点号Node
 获取的数据示例：
 {
 	"stats": {
@@ -249,7 +253,83 @@ node_number为节点号Node
   }
 }
 
-最新的
-操作说明：
+dim_nodes表的最新ddl如下：
+CREATE TABLE `dim_nodes` (
+  `node_id` int(11) NOT NULL COMMENT '节点ID，主键',
+  `callsign` varchar(20) DEFAULT NULL,
+  `frequency` varchar(50) DEFAULT NULL COMMENT '最新工作频率',
+  `tone` varchar(20) DEFAULT NULL COMMENT '最新亚音',
+  `owner` varchar(100) DEFAULT NULL,
+  `affiliation` varchar(100) DEFAULT NULL,
+  `site` varchar(100) DEFAULT NULL COMMENT '最新物理站点名称',
+  `features` varchar(100) DEFAULT NULL COMMENT '最新功能标签',
+  `affiliation_type` varchar(20) DEFAULT NULL COMMENT '组织类型：Personal/Club/System',
+  `country` varchar(100) DEFAULT NULL,
+  `continent` varchar(50) DEFAULT NULL,
+  `is_active` tinyint(1) DEFAULT NULL COMMENT '当前是否在线',
+  `last_seen` datetime DEFAULT NULL COMMENT '最后一次在线时间',
+  `node_rank` varchar(20) DEFAULT NULL COMMENT '节点等级：Core/Active/Transient',
+  `mobility_type` varchar(20) DEFAULT NULL COMMENT '移动属性：Fixed(固定)/Mobile(移动)',
+  `first_seen_at` datetime DEFAULT NULL COMMENT '节点首次入网时间',
+  `update_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '本记录最后更新时间',
+  `latitude` double DEFAULT NULL COMMENT '最新纬度',
+  `longitude` double DEFAULT NULL COMMENT '最新经纬',
+  `location_desc` varchar(200) DEFAULT NULL COMMENT '原始位置描述文本',
+  `is_mobile` tinyint(1) DEFAULT '0' COMMENT '是否为移动节点（根据DWD位移历史判定）',
+  `app_version` varchar(20) DEFAULT NULL COMMENT 'ASL软件版本',
+  `is_bridge` tinyint(1) DEFAULT '0' COMMENT '是否为数字网关/桥接器',
+  `can_web_tx` tinyint(1) DEFAULT '0' COMMENT '是否支持网页收发',
+  `ip_address` varchar(45) DEFAULT NULL COMMENT '最后报告的IP地址',
+  `timezone_offset` decimal(3,1) DEFAULT NULL COMMENT '时区偏移量',
+  `is_nnx` tinyint(1) DEFAULT '0' COMMENT '是否使用NNX协议',
+  `hardware_type` varchar(50) DEFAULT NULL COMMENT '硬件类型预测(根据OS/版本猜测)',
+  `total_keyups` bigint(20) DEFAULT '0' COMMENT '历史累计PTT次数',
+  `total_tx_time` bigint(20) DEFAULT '0' COMMENT '历史累计发射时长',
+  `avg_talk_length` decimal(10,2) DEFAULT '0.00' COMMENT '平均单次通话时长',
+  `can_telephone` tinyint(1) DEFAULT '0' COMMENT '是否支持电话网关接入',
+  `has_function_list` tinyint(1) DEFAULT '0' COMMENT '是否支持远程功能列表查询',
+  `max_uptime` bigint(20) DEFAULT '0' COMMENT '历史最大连续在线时长(秒)',
+  `current_link_count` int(11) DEFAULT '0' COMMENT '当前实时连接数',
+  PRIMARY KEY (`node_id`),
+  KEY `idx_geo` (`latitude`,`longitude`),
+  KEY `idx_app_version` (`app_version`),
+  KEY `idx_is_bridge` (`is_bridge`),
+  KEY `idx_keyups` (`total_keyups`),
+  KEY `idx_link_count` (`current_link_count`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+需求说明：
+1. 系统架构设计
+新增的需求必须分为三个解耦的组件，通过 Redis (Key: asl_task_queue) 进行通信：
+快照扫描器 (Snapshot Scanner)：
+频率：每 5 分钟运行一次。
+目标：抓取 http://stats.allstarlink.org/api/stats/nodeList (HTML 聚合页)。
+逻辑：提取所有在线节点 ID 及其连接数。
+产出：根据连接数计算优先级（Priority），将节点 ID 推送至 Redis 优先级队列。
+优先级调度器 (Priority Logic)：
+High (Score: 100): 连接数 > 5 的 Hub 节点。
+Normal (Score: 50): 连接数 1-4 的活跃节点。
+Low (Score: 10): 在线但无连接的边缘节点。
+Cleanup: 若快照显示节点下线，立即在 Neo4j 中执行 SET r.active = false 并从队列剔除。
+异步工作者 (API Worker)：
+速率限制：严格遵守 30 requests/min（单 IP）。
+逻辑：从 Redis 取出高优先级节点，调用 /api/stats/{id}。
+写入：更新 MySQL dim_nodes（最新快照）和 Neo4j（拓扑关系）。
+2. Neo4j 关系维护策略 (重要)
+为了解决“节点爬取时差”导致的拓扑失真，请实现以下逻辑：
+Merge 模式：使用 MERGE (src)-[r:CONNECTED_TO]->(dst)。
+时间戳属性：每个关系必须包含 last_updated 属性。
+失效清理：每次写入新关系时，对比 nodes 字符串。若旧关系不再出现在新字符串中，或 last_updated 超过 15 分钟未更新，则删除或禁用该关系。
+3. 技术栈要求
+语言：Python 3.10+ (asyncio)。
+库：aiohttp (异步请求), redis-py (队列管理), neo4j (官方驱动), BeautifulSoup4 (解析 HTML)。
+健壮性：必须包含对 HTTP 429 的熔断处理（sleep 3600s）和 指数退避 重试机制，代码中要有完善的log中文信息，以及异常处理，确保不影响主线程的进行。
+4. 输出要求
+请提供 Redis 优先级队列的入队/出队 Python 函数。
+请提供核心的 update_topology_to_neo4j Cypher 查询语句。
+请提供主调度循环（Main Loop）的伪代码，展示如何平衡 30次/分 的速率限制。
+请基于以上要求开始编写代码框架。
+
+
 
 
