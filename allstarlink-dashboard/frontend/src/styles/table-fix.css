@@ -1,0 +1,280 @@
+/* 表格强制样式修复 - 确保暗色主题一致性 */
+
+/* 强制覆盖所有表格样式 */
+.el-table,
+.el-table * {
+  box-sizing: border-box !important;
+}
+
+/* 表格主容器 */
+.el-table {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-primary) !important;
+  border-radius: var(--radius-lg) !important;
+  overflow: hidden !important;
+}
+
+/* 表格包装器 */
+.el-table__inner-wrapper {
+  background-color: var(--bg-card) !important;
+}
+
+/* 表头区域 */
+.el-table__header-wrapper {
+  background-color: var(--surface-primary) !important;
+}
+
+.el-table__header {
+  background-color: var(--surface-primary) !important;
+}
+
+/* 表头单元格 */
+.el-table th,
+.el-table thead th,
+.el-table .el-table__header th,
+.el-table .el-table__header-wrapper th,
+.el-table th.el-table__cell {
+  background-color: var(--surface-primary) !important;
+  color: var(--text-primary) !important;
+  border-bottom: 2px solid var(--primary-color) !important;
+  border-right: 1px solid var(--border-secondary) !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  font-size: 12px !important;
+  letter-spacing: 0.5px !important;
+  padding: 12px 16px !important;
+}
+
+.el-table th:last-child,
+.el-table thead th:last-child,
+.el-table .el-table__header th:last-child,
+.el-table th.el-table__cell:last-child {
+  border-right: none !important;
+}
+
+/* 表格内容区域 */
+.el-table__body-wrapper {
+  background-color: var(--bg-card) !important;
+}
+
+.el-table__body {
+  background-color: var(--bg-card) !important;
+}
+
+/* 表格行 */
+.el-table tr,
+.el-table tbody tr,
+.el-table .el-table__body tr,
+.el-table__row {
+  background-color: var(--bg-card) !important;
+}
+
+/* 表格数据单元格 */
+.el-table td,
+.el-table tbody td,
+.el-table .el-table__body td,
+.el-table td.el-table__cell {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-bottom: 1px solid var(--border-secondary) !important;
+  border-right: 1px solid rgba(108, 92, 231, 0.1) !important;
+  transition: background-color var(--duration-normal) !important;
+  padding: 12px 16px !important;
+}
+
+.el-table td:last-child,
+.el-table tbody td:last-child,
+.el-table .el-table__body td:last-child,
+.el-table td.el-table__cell:last-child {
+  border-right: none !important;
+}
+
+/* 移除所有斑马纹效果 */
+.el-table--striped tr,
+.el-table--striped tbody tr,
+.el-table--striped .el-table__body tr,
+.el-table--striped .el-table__row,
+.el-table--striped tr.el-table__row--striped,
+.el-table--striped .el-table__body tr.el-table__row--striped {
+  background-color: var(--bg-card) !important;
+}
+
+.el-table--striped td,
+.el-table--striped tbody td,
+.el-table--striped .el-table__body td,
+.el-table--striped td.el-table__cell,
+.el-table--striped tr.el-table__row--striped td,
+.el-table--striped .el-table__body tr.el-table__row--striped td,
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background-color: var(--bg-card) !important;
+}
+
+/* 悬停效果 */
+.el-table tr:hover,
+.el-table tbody tr:hover,
+.el-table .el-table__body tr:hover,
+.el-table__row:hover {
+  background-color: rgba(108, 92, 231, 0.08) !important;
+}
+
+.el-table tr:hover td,
+.el-table tbody tr:hover td,
+.el-table .el-table__body tr:hover td,
+.el-table__row:hover td,
+.el-table__body tr:hover td.el-table__cell {
+  background-color: rgba(108, 92, 231, 0.08) !important;
+  color: var(--text-primary) !important;
+}
+
+.el-table--striped tr:hover,
+.el-table--striped tbody tr:hover,
+.el-table--striped .el-table__body tr:hover,
+.el-table--striped .el-table__row:hover,
+.el-table--striped tr.el-table__row--striped:hover,
+.el-table--striped .el-table__body tr.el-table__row--striped:hover {
+  background-color: rgba(108, 92, 231, 0.08) !important;
+}
+
+.el-table--striped tr:hover td,
+.el-table--striped tbody tr:hover td,
+.el-table--striped .el-table__body tr:hover td,
+.el-table--striped tr.el-table__row--striped:hover td,
+.el-table--striped .el-table__body tr.el-table__row--striped:hover td,
+.el-table--striped .el-table__body tr.el-table__row--striped:hover td.el-table__cell {
+  background-color: rgba(108, 92, 231, 0.08) !important;
+  color: var(--text-primary) !important;
+}
+
+/* 表格边框移除 */
+.el-table::before,
+.el-table--border::after,
+.el-table--group::after {
+  display: none !important;
+}
+
+/* 空数据提示 */
+.el-table__empty-block {
+  background-color: var(--bg-card) !important;
+}
+
+.el-table__empty-text {
+  color: var(--text-secondary) !important;
+}
+
+/* 表格固定列阴影 */
+.el-table__fixed,
+.el-table__fixed-right {
+  background-color: var(--bg-card) !important;
+}
+
+.el-table__fixed::before,
+.el-table__fixed-right::before {
+  background-color: rgba(108, 92, 231, 0.1) !important;
+}
+
+/* 表格排序箭头 */
+.el-table th .ascending,
+.el-table th .descending {
+  border-bottom-color: var(--primary-color) !important;
+}
+
+.el-table th .ascending {
+  border-top-color: var(--primary-color) !important;
+}
+
+/* 表格选择框 */
+.el-table .el-checkbox {
+  --el-checkbox-border-color: var(--border-primary) !important;
+  --el-checkbox-bg-color: var(--surface-primary) !important;
+  --el-checkbox-checked-bg-color: var(--primary-color) !important;
+  --el-checkbox-checked-border-color: var(--primary-color) !important;
+}
+
+.el-table .el-checkbox__input.is-checked .el-checkbox__inner {
+  background-color: var(--primary-color) !important;
+  border-color: var(--primary-color) !important;
+}
+
+/* 表格展开行 */
+.el-table__expand-icon {
+  color: var(--text-primary) !important;
+}
+
+.el-table__expand-icon:hover {
+  color: var(--primary-color) !important;
+}
+
+/* 确保表格内的所有文本都是白色 */
+.el-table td .cell,
+.el-table th .cell,
+.el-table td span,
+.el-table th span,
+.el-table td div,
+.el-table th div,
+.el-table td a,
+.el-table th a {
+  color: inherit !important;
+}
+
+/* 表格内的标签组件 */
+.el-table .el-tag {
+  background-color: var(--surface-secondary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-primary) !important;
+}
+
+.el-table .el-tag--success {
+  background-color: rgba(0, 184, 148, 0.2) !important;
+  color: var(--success) !important;
+  border-color: var(--success) !important;
+}
+
+.el-table .el-tag--warning {
+  background-color: rgba(253, 203, 110, 0.2) !important;
+  color: var(--warning) !important;
+  border-color: var(--warning) !important;
+}
+
+.el-table .el-tag--danger {
+  background-color: rgba(225, 112, 85, 0.2) !important;
+  color: var(--error) !important;
+  border-color: var(--error) !important;
+}
+
+.el-table .el-tag--info {
+  background-color: rgba(116, 185, 255, 0.2) !important;
+  color: var(--info) !important;
+  border-color: var(--info) !important;
+}
+
+/* 表格内的按钮 */
+.el-table .el-button {
+  color: var(--text-primary) !important;
+  background-color: var(--surface-primary) !important;
+  border-color: var(--border-primary) !important;
+}
+
+.el-table .el-button--primary {
+  background-color: var(--primary-color) !important;
+  border-color: var(--primary-color) !important;
+}
+
+.el-table .el-button:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm), var(--glow-primary);
+}
+
+/* 表格加载状态 */
+.el-table .el-loading-mask {
+  background-color: rgba(45, 52, 54, 0.8) !important;
+  backdrop-filter: blur(10px) !important;
+}
+
+.el-table .el-loading-spinner {
+  color: var(--primary-color) !important;
+}
+
+.el-table .el-loading-text {
+  color: var(--text-primary) !important;
+}

@@ -1,0 +1,231 @@
+/* 全局强制样式覆盖 - 确保暗色主题完整性 */
+
+/* 强制覆盖所有可能的白色背景和黑色文字 */
+* {
+  /* 移除任何可能的白色背景 */
+  background-color: transparent !important;
+}
+
+html, body {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* 强制覆盖所有可能出现白色的 Element Plus 组件 */
+.el-popper,
+.el-tooltip__popper,
+.el-popover,
+.el-dropdown-menu,
+.el-select-dropdown,
+.el-cascader-panel,
+.el-color-picker__panel,
+.el-date-picker,
+.el-time-picker,
+.el-picker-panel {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* 表格相关的强制覆盖 */
+table,
+thead,
+tbody,
+tr,
+th,
+td {
+  background-color: transparent !important;
+}
+
+/* 特别针对表格标题的覆盖 */
+.el-table th,
+.el-table thead th,
+.el-table .el-table__header-wrapper th,
+th.el-table__cell,
+.el-table__header th.el-table__cell {
+  background-color: var(--surface-primary) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-primary) !important;
+}
+
+/* 表格内容的强制覆盖 */
+.el-table td,
+.el-table tbody td,
+.el-table .el-table__body-wrapper td,
+td.el-table__cell,
+.el-table__body td.el-table__cell {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
+/* 移除所有可能的斑马纹 */
+.el-table--striped .el-table__body tr.el-table__row--striped td,
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell,
+tr.el-table__row--striped td,
+tr.el-table__row--striped td.el-table__cell {
+  background-color: var(--bg-card) !important;
+}
+
+/* 文本颜色强制覆盖 */
+.el-table .cell,
+.el-table th .cell,
+.el-table td .cell,
+.el-table__header .cell,
+.el-table__body .cell {
+  color: var(--text-primary) !important;
+}
+
+/* 确保表格内的链接和文本都是正确颜色 */
+.el-table a,
+.el-table span,
+.el-table div,
+.el-table p,
+.el-table strong,
+.el-table em {
+  color: inherit !important;
+}
+
+/* 表格排序图标 */
+.el-table .caret-wrapper {
+  color: var(--text-secondary) !important;
+}
+
+.el-table .sort-caret.ascending,
+.el-table .sort-caret.descending {
+  border-bottom-color: var(--primary-color) !important;
+  border-top-color: var(--primary-color) !important;
+}
+
+/* 表格展开图标 */
+.el-table__expand-icon {
+  color: var(--text-primary) !important;
+  background-color: transparent !important;
+}
+
+.el-table__expand-icon:hover {
+  color: var(--primary-color) !important;
+}
+
+/* 表格选中行 */
+.el-table__body tr.current-row > td {
+  background-color: rgba(108, 92, 231, 0.15) !important;
+  color: var(--text-primary) !important;
+}
+
+/* 表格固定列 */
+.el-table__fixed,
+.el-table__fixed-right {
+  background-color: var(--bg-card) !important;
+}
+
+.el-table__fixed-header-wrapper,
+.el-table__fixed-body-wrapper,
+.el-table__fixed-footer-wrapper {
+  background-color: var(--bg-card) !important;
+}
+
+.el-table__fixed-header-wrapper table,
+.el-table__fixed-body-wrapper table,
+.el-table__fixed-footer-wrapper table {
+  background-color: var(--bg-card) !important;
+}
+
+/* 强制覆盖可能的内联样式 */
+[style*="background-color: #fff"],
+[style*="background-color: white"],
+[style*="background-color: rgb(255, 255, 255)"] {
+  background-color: var(--bg-card) !important;
+}
+
+[style*="color: #000"],
+[style*="color: black"],
+[style*="color: rgb(0, 0, 0)"] {
+  color: var(--text-primary) !important;
+}
+
+/* 确保所有表格元素的边框都是正确的颜色 */
+.el-table,
+.el-table tr,
+.el-table th,
+.el-table td {
+  border-color: var(--border-secondary) !important;
+}
+
+/* 表格头部边框特殊处理 */
+.el-table th {
+  border-bottom-color: var(--primary-color) !important;
+  border-bottom-width: 2px !important;
+}
+
+/* 最后一行的边框 */
+.el-table tbody tr:last-child td {
+  border-bottom: 1px solid var(--border-primary) !important;
+}
+
+/* 表格组件的加载状态 */
+.el-table .el-loading-mask {
+  background-color: rgba(45, 52, 54, 0.9) !important;
+}
+
+/* 表格的滚动条样式 */
+.el-table__body-wrapper::-webkit-scrollbar,
+.el-table__fixed-body-wrapper::-webkit-scrollbar,
+.el-table__fixed-right-patch::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+.el-table__body-wrapper::-webkit-scrollbar-track,
+.el-table__fixed-body-wrapper::-webkit-scrollbar-track,
+.el-table__fixed-right-patch::-webkit-scrollbar-track {
+  background: var(--surface-secondary) !important;
+  border-radius: var(--radius-md) !important;
+}
+
+.el-table__body-wrapper::-webkit-scrollbar-thumb,
+.el-table__fixed-body-wrapper::-webkit-scrollbar-thumb,
+.el-table__fixed-right-patch::-webkit-scrollbar-thumb {
+  background: var(--primary-color) !important;
+  border-radius: var(--radius-md) !important;
+}
+
+.el-table__body-wrapper::-webkit-scrollbar-thumb:hover,
+.el-table__fixed-body-wrapper::-webkit-scrollbar-thumb:hover,
+.el-table__fixed-right-patch::-webkit-scrollbar-thumb:hover {
+  background: var(--primary-light) !important;
+}
+
+/* 表格无数据时的样式 */
+.el-table__empty-block {
+  background-color: var(--bg-card) !important;
+  color: var(--text-secondary) !important;
+}
+
+/* 确保分页组件也使用正确的颜色 */
+.el-pagination {
+  background-color: transparent !important;
+}
+
+.el-pagination .el-pagination__total,
+.el-pagination .el-pagination__jump {
+  color: var(--text-primary) !important;
+}
+
+/* 表格工具栏 */
+.el-table__column-filter-trigger,
+.el-table__column-filter-trigger i {
+  color: var(--text-secondary) !important;
+}
+
+.el-table__column-filter-trigger:hover,
+.el-table__column-filter-trigger:hover i {
+  color: var(--primary-color) !important;
+}
+
+/* 确保表格内的自定义组件也使用正确颜色 */
+.el-table .custom-tag,
+.el-table .status-tag,
+.el-table .node-status {
+  color: inherit !important;
+  background-color: var(--surface-secondary) !important;
+}
