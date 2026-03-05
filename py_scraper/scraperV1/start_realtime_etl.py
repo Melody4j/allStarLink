@@ -17,7 +17,7 @@ current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))
 
 try:
-    from realtime_etl_config import get_config_summary, get_database_url
+    from scraperV1.realtime_etl_config import get_config_summary, get_database_url
 except ImportError:
     print("警告: 无法导入配置文件，使用默认配置")
 
