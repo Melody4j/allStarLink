@@ -201,6 +201,7 @@ class Neo4jManager(BaseDatabaseManager):
 
             # 构建当前连接的节点ID集合
             current_target_ids = {conn.target_id for conn in current_connections}
+            stale_count = 0
 
             # 检查每个关系是否仍然有效
             async for record in result:
@@ -214,9 +215,13 @@ class Neo4jManager(BaseDatabaseManager):
                     MATCH (src:Node {node_id: $src_id})-[r:CONNECTED_TO]->(dst:Node {node_id: $dst_id})
                     SET r.active = false
                     """, src_id=node_id, dst_id=target_id)
-                    logger.debug(f"禁用节点 {node_id} 到 {target_id} 的失效关系")
+                    stale_count += 1
+                    logger.debug(f"Neo4j关系清理: 禁用节点 {node_id} 到 {target_id} 的失效关系")
+
+            if stale_count > 0:
+                logger.info(f"Neo4j关系清理: 节点 {node_id} 已清理 {stale_count} 个失效关系")
         except Exception as e:
-            logger.error(f"清理失效关系失败: {e}")
+            logger.error(f"Neo4j关系清理失败: 清理节点 {node_id} 失效关系异常 - {e}")
 
     def _is_stale(self, last_updated: str, current_time: str,
                   threshold_minutes: int = STALE_RELATIONSHIP_THRESHOLD) -> bool:

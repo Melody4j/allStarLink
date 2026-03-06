@@ -53,10 +53,10 @@ class RedisPriorityQueue:
             await self.redis.zadd(self.queue_key, {str(node_id): priority})
             # 记录任务集合，用于去重
             await self.redis.sadd(self.task_set_key, str(node_id))
-            logger.debug(f"节点 {node_id} 已加入优先级队列，优先级: {priority}")
+            logger.info(f"Redis队列操作: 节点 {node_id} 已加入优先级队列，优先级分数: {priority}（连接数）")
             return True
         except Exception as e:
-            logger.error(f"节点 {node_id} 入队失败: {e}")
+            logger.error(f"Redis队列操作失败: 节点 {node_id} 入队异常 - {e}")
             return False
 
     async def dequeue(self) -> Optional[int]:
@@ -72,11 +72,12 @@ class RedisPriorityQueue:
                 node_id = int(result[0][0])
                 # 从任务集合中移除
                 await self.redis.srem(self.task_set_key, str(node_id))
-                logger.debug(f"从队列中取出节点 {node_id}")
+                logger.info(f"Redis队列操作: 从队列中取出节点 {node_id} 进行处理")
                 return node_id
+            logger.debug("Redis队列操作: 队列为空，暂无待处理节点")
             return None
         except Exception as e:
-            logger.error(f"从队列中取出节点失败: {e}")
+            logger.error(f"Redis队列操作失败: 出队异常 - {e}")
             return None
 
     async def get_size(self) -> int:
@@ -86,9 +87,11 @@ class RedisPriorityQueue:
             int: 队列中的任务数量
         """
         try:
-            return await self.redis.zcard(self.queue_key)
+            size = await self.redis.zcard(self.queue_key)
+            logger.debug(f"Redis队列状态: 当前队列大小为 {size} 个任务")
+            return size
         except Exception as e:
-            logger.error(f"获取队列大小失败: {e}")
+            logger.error(f"Redis队列操作失败: 获取队列大小异常 - {e}")
             return 0
 
     async def remove(self, node_id: int) -> bool:
@@ -103,10 +106,10 @@ class RedisPriorityQueue:
         try:
             await self.redis.zrem(self.queue_key, str(node_id))
             await self.redis.srem(self.task_set_key, str(node_id))
-            logger.debug(f"从队列中移除节点 {node_id}")
+            logger.info(f"Redis队列操作: 已从队列中移除节点 {node_id}")
             return True
         except Exception as e:
-            logger.error(f"从队列中移除节点 {node_id} 失败: {e}")
+            logger.error(f"Redis队列操作失败: 移除节点 {node_id} 异常 - {e}")
             return False
 
     async def contains(self, node_id: int) -> bool:
@@ -119,9 +122,11 @@ class RedisPriorityQueue:
             bool: 节点是否在队列中
         """
         try:
-            return await self.redis.sismember(self.task_set_key, str(node_id))
+            exists = await self.redis.sismember(self.task_set_key, str(node_id))
+            logger.debug(f"Redis队列操作: 检查节点 {node_id} 是否在队列中 - {exists}")
+            return exists
         except Exception as e:
-            logger.error(f"检查节点 {node_id} 是否在队列中失败: {e}")
+            logger.error(f"Redis队列操作失败: 检查节点 {node_id} 是否存在异常 - {e}")
             return False
 
     async def clear(self) -> None:
@@ -132,6 +137,6 @@ class RedisPriorityQueue:
         try:
             await self.redis.delete(self.queue_key)
             await self.redis.delete(self.task_set_key)
-            logger.info("已清空Redis队列和任务集合")
+            logger.info("Redis队列操作: 已清空Redis优先级队列和任务集合")
         except Exception as e:
-            logger.error(f"清空Redis队列失败: {e}")
+            logger.error(f"Redis队列操作失败: 清空队列异常 - {e}")

@@ -40,6 +40,31 @@ class Node:
     location_desc: Optional[str]
     hardware_type: str
     connections: int
+    # dim_nodes V2.0 新增字段
+    owner: Optional[str] = None
+    affiliation: Optional[str] = None
+    site_name: Optional[str] = None
+    affiliation_type: Optional[str] = None
+    country: Optional[str] = None
+    continent: Optional[str] = None
+    mobility_type: Optional[str] = None
+    first_seen_at: Optional[datetime] = None
+    is_mobile: Optional[bool] = None
+    app_version: Optional[str] = None
+    is_bridge: Optional[bool] = None
+    access_webtransceiver: Optional[bool] = None
+    ip_address: Optional[str] = None
+    timezone_offset: Optional[float] = None
+    is_nnx: Optional[bool] = None
+    history_total_keyups: Optional[int] = None
+    history_tx_time: Optional[int] = None
+    access_telephoneportal: Optional[bool] = None
+    access_functionlist: Optional[bool] = None
+    access_reverseautopatch: Optional[bool] = None
+    seqno: Optional[int] = None
+    timeout: Optional[int] = None
+    totalexecdcommands: Optional[int] = None
+    max_uptime: Optional[int] = None
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -61,7 +86,32 @@ class Node:
             'tone': self.tone,
             'location_desc': self.location_desc,
             'hardware_type': self.hardware_type,
-            'connections': self.connections
+            'connections': self.connections,
+            # dim_nodes V2.0 新增字段
+            'owner': self.owner,
+            'affiliation': self.affiliation,
+            'site_name': self.site_name,
+            'affiliation_type': self.affiliation_type,
+            'country': self.country,
+            'continent': self.continent,
+            'mobility_type': self.mobility_type,
+            'first_seen_at': self.first_seen_at.isoformat() if self.first_seen_at else None,
+            'is_mobile': self.is_mobile,
+            'app_version': self.app_version,
+            'is_bridge': self.is_bridge,
+            'access_webtransceiver': self.access_webtransceiver,
+            'ip_address': self.ip_address,
+            'timezone_offset': self.timezone_offset,
+            'is_nnx': self.is_nnx,
+            'history_total_keyups': self.history_total_keyups,
+            'history_tx_time': self.history_tx_time,
+            'access_telephoneportal': self.access_telephoneportal,
+            'access_functionlist': self.access_functionlist,
+            'access_reverseautopatch': self.access_reverseautopatch,
+            'seqno': self.seqno,
+            'timeout': self.timeout,
+            'totalexecdcommands': self.totalexecdcommands,
+            'max_uptime': self.max_uptime
         }
 
     def validate(self) -> bool:
@@ -106,5 +156,30 @@ class Node:
             tone=None,
             location_desc=None,
             hardware_type=HARDWARE_TYPE_UNKNOWN,
-            connections=DEFAULT_CONNECTIONS
+            connections=DEFAULT_CONNECTIONS,
+            # dim_nodes V2.0 新增字段默认值
+            owner=None,
+            affiliation=None,
+            site_name=None,
+            affiliation_type='Personal',
+            country='Unknown',
+            continent='Unknown',
+            mobility_type='Fixed',
+            first_seen_at=now,
+            is_mobile=False,
+            app_version=None,
+            is_bridge=False,
+            access_webtransceiver=False,
+            ip_address=None,
+            timezone_offset=None,
+            is_nnx=False,
+            history_total_keyups=0,
+            history_tx_time=0,
+            access_telephoneportal=False,
+            access_functionlist=False,
+            access_reverseautopatch=False,
+            seqno=0,
+            timeout=0,
+            totalexecdcommands=0,
+            max_uptime=0
         )

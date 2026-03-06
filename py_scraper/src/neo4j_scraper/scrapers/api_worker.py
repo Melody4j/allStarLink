@@ -82,7 +82,7 @@ class APIWorker:
         """
         # 检查速率限制
         if not await self.rate_limiter.can_make_request():
-            logger.debug("达到速率限制，等待...")
+            logger.debug("API工作者: 达到速率限制，等待...")
             await asyncio.sleep(1)
             return
 
@@ -91,20 +91,20 @@ class APIWorker:
         if not node_id:
             return
 
-        logger.info(f"开始处理节点 {node_id}")
+        logger.info(f"API工作者: 开始处理节点 {node_id}")
         try:
             # 获取节点详细数据
-            logger.debug(f"正在获取节点 {node_id} 的详细数据...")
+            logger.debug(f"API工作者: 正在获取节点 {node_id} 的详细数据...")
             node_data = await self._fetch_node_data(node_id)
             if node_data:
-                logger.debug(f"成功获取节点 {node_id} 的数据，开始解析和更新数据库...")
+                logger.debug(f"API工作者: 成功获取节点 {node_id} 的数据，开始解析和更新数据库...")
                 # 更新数据库
                 await self._update_databases(node_data)
-                logger.info(f"成功处理节点 {node_id}")
+                logger.info(f"API工作者: 成功处理节点 {node_id}")
             else:
-                logger.warning(f"未能获取节点 {node_id} 的数据，跳过处理")
+                logger.warning(f"API工作者: 未能获取节点 {node_id} 的数据，跳过处理")
         except Exception as e:
-            logger.error(f"处理节点 {node_id} 失败: {e}", exc_info=True)
+            logger.error(f"API工作者: 处理节点 {node_id} 失败 - {e}", exc_info=True)
 
     async def _fetch_node_data(self, node_id: int) -> Optional[Dict]:
         """获取节点详细数据
@@ -160,17 +160,17 @@ class APIWorker:
             data: API返回的节点数据
         """
         try:
-            logger.debug("开始解析和更新数据库...")
+            logger.debug("API工作者: 开始解析和更新数据库...")
             # 解析主节点数据
             node = self.parser.parse_node(data)
             if not node:
-                logger.warning("节点数据解析失败，跳过更新")
+                logger.warning("API工作者: 节点数据解析失败，跳过更新")
                 return
 
-            logger.debug(f"成功解析主节点数据: ID={node.node_id}, 类型={node.node_type}, 呼号={node.callsign}")
+            logger.debug(f"API工作者: 成功解析主节点数据 - ID:{node.node_id}, 类型:{node.node_type}, 呼号:{node.callsign}")
             # 更新Neo4j
             await self.neo4j_manager.update_node(node)
-            logger.debug(f"已更新节点 {node.node_id} 的Neo4j数据")
+            logger.debug(f"API工作者: 已更新节点 {node.node_id} 的Neo4j数据")
 
             # 解析连接节点
             stats = data.get('stats', {})
@@ -178,7 +178,7 @@ class APIWorker:
             linked_nodes = node_data.get('linkedNodes', [])
             connection_modes = node_data.get('nodes', '')
 
-            logger.debug(f"发现 {len(linked_nodes)} 个连接节点")
+            logger.info(f"API工作者: 发现 {len(linked_nodes)} 个连接节点")
             # 解析连接关系
             connections = self.parser.parse_connections(
                 node.node_id,
@@ -192,22 +192,23 @@ class APIWorker:
                     node.node_id,
                     connections
                 )
-                logger.debug(f"已更新节点 {node.node_id} 的 {len(connections)} 个连接关系")
+                logger.debug(f"API工作者: 已更新节点 {node.node_id} 的 {len(connections)} 个连接关系")
 
             # 更新linkedNodes中的节点数据到Neo4j
             for linked_node in linked_nodes:
                 linked_node_obj = self.parser.parse_linked_node(linked_node)
                 if linked_node_obj:
                     await self.neo4j_manager.update_node(linked_node_obj)
-                    logger.debug(f"已更新连接节点 {linked_node_obj.node_id} 的Neo4j数据")
+                    logger.debug(f"API工作者: 已更新连接节点 {linked_node_obj.node_id} 的Neo4j数据")
 
             # 更新MySQL（只更新AllStarLink节点）
             if node.source == 'allstarlink':
-                logger.debug(f"开始更新节点 {node.node_id} 的MySQL数据...")
+                logger.debug(f"API工作者: 开始更新节点 {node.node_id} 的MySQL数据...")
                 await self.mysql_manager.upsert_node(node)
-                logger.debug(f"已更新节点 {node.node_id} 的MySQL数据")
+                logger.debug(f"API工作者: 已更新节点 {node.node_id} 的MySQL数据")
 
                 # 更新linkedNodes中的节点数据到MySQL
+                mysql_update_count = 0
                 for linked_node in linked_nodes:
                     linked_node_id = linked_node.get('name')
                     if linked_node_id and isinstance(linked_node_id, (int, str)):
@@ -222,9 +223,12 @@ class APIWorker:
                         linked_node_obj = self.parser.parse_linked_node(linked_node)
                         if linked_node_obj and linked_node_obj.source == 'allstarlink':
                             await self.mysql_manager.upsert_node(linked_node_obj)
-                            logger.debug(f"已更新连接节点 {linked_node_int} 的MySQL数据")
+                            mysql_update_count += 1
 
-            logger.debug("数据库更新完成")
+                if mysql_update_count > 0:
+                    logger.info(f"API工作者: 已更新 {mysql_update_count} 个连接节点到MySQL")
+
+            logger.debug("API工作者: 数据库更新完成")
         except Exception as e:
-            logger.error(f"更新数据库失败: {e}", exc_info=True)
+            logger.error(f"API工作者: 更新数据库失败 - {e}", exc_info=True)
             raise

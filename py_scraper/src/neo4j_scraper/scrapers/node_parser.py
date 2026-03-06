@@ -95,6 +95,32 @@ class NodeParser:
                 server_info.get('SiteName', '')
             )
 
+            # 解析dim_nodes V2.0新增字段
+            owner = user_node.get('User_ID', '')
+            affiliation = server_info.get('Affiliation', '')
+            site_name = server_info.get('Server_Name', '')
+            affiliation_type = self._classify_affiliation_type(affiliation, user_node.get('callsign', ''))
+            country = 'Unknown'  # 需要从API获取或通过坐标解析
+            continent = 'Unknown'  # 需要从API获取或通过坐标解析
+            mobility_type = 'Fixed'  # 默认固定节点
+            first_seen_at = datetime.now()
+            is_mobile = False  # 默认非移动节点
+            app_version = ''  # 需要从API获取
+            is_bridge = False  # 默认非网桥
+            access_webtransceiver = user_node.get('access_webtransceiver', '0') == '1'
+            ip_address = ''  # 需要从API获取
+            timezone_offset = None  # 需要从API获取
+            is_nnx = user_node.get('is_nnx', 'No') == 'Yes'
+            history_total_keyups = 0  # 累计值，需要从数据库读取
+            history_tx_time = 0  # 累计值，需要从数据库读取
+            access_telephoneportal = user_node.get('access_telephoneportal', '0') == '1'
+            access_functionlist = user_node.get('access_functionlist', '0') == '1'
+            access_reverseautopatch = user_node.get('access_reverseautopatch', '0') == '1'
+            seqno = int(node_data.get('seqno', 0) or 0)
+            timeout = int(node_data.get('timeouts', 0) or 0)
+            totalexecdcommands = int(node_data.get('totalexecdcommands', 0) or 0)
+            max_uptime = 0  # 累计值，需要从数据库读取
+
             # 构建节点对象
             node = Node(
                 node_id=int(node_id_value) if isinstance(node_id_value, (int, str)) else 0,
@@ -114,7 +140,32 @@ class NodeParser:
                 tone=tone,
                 location_desc=location_desc,
                 hardware_type=hardware_type,
-                connections=len(node_data.get('linkedNodes', []))
+                connections=len(node_data.get('linkedNodes', [])),
+                # dim_nodes V2.0 新增字段
+                owner=owner,
+                affiliation=affiliation,
+                site_name=site_name,
+                affiliation_type=affiliation_type,
+                country=country,
+                continent=continent,
+                mobility_type=mobility_type,
+                first_seen_at=first_seen_at,
+                is_mobile=is_mobile,
+                app_version=app_version,
+                is_bridge=is_bridge,
+                access_webtransceiver=access_webtransceiver,
+                ip_address=ip_address,
+                timezone_offset=timezone_offset,
+                is_nnx=is_nnx,
+                history_total_keyups=history_total_keyups,
+                history_tx_time=history_tx_time,
+                access_telephoneportal=access_telephoneportal,
+                access_functionlist=access_functionlist,
+                access_reverseautopatch=access_reverseautopatch,
+                seqno=seqno,
+                timeout=timeout,
+                totalexecdcommands=totalexecdcommands,
+                max_uptime=max_uptime
             )
 
             return node
@@ -318,6 +369,34 @@ class NodeParser:
             return HARDWARE_TYPE_EMBEDDED
 
         return HARDWARE_TYPE_UNKNOWN
+
+    def _classify_affiliation_type(self, affiliation: str, callsign: str) -> str:
+        """对affiliation进行分类
+
+        Args:
+            affiliation: 组织名称
+            callsign: 呼号
+
+        Returns:
+            str: 组织类型（Personal/Club/System）
+        """
+        if not affiliation:
+            return 'Personal'
+
+        affiliation = affiliation.lower().strip()
+        callsign = callsign.lower().strip() if callsign else ''
+
+        # 冲突处理：affiliation与callsign完全一致时标记为Personal
+        if affiliation == callsign and affiliation != '':
+            return 'Personal'
+
+        # 组织关键词匹配
+        org_keywords = ['club', 'arc', 'network', 'system', 'link', 'org', 'group', 'hub']
+        for keyword in org_keywords:
+            if keyword in affiliation:
+                return 'Organization'
+
+        return 'Personal'
 
     def _parse_connection_modes(self, connection_modes: str) -> Dict[str, str]:
         """解析连接模式字符串

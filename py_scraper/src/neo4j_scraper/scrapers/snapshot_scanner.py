@@ -164,12 +164,6 @@ class SnapshotScanner:
             node_id = node['node_id']
             link_count = node['link_count']
 
-            # 根据连接数分配优先级
-            if link_count > 5:
-                node_rank = NODE_RANK_CORE
-            else:
-                node_rank = NODE_RANK_NORMAL
-
             # 直接使用连接数作为优先级分数
             priority = link_count
 
@@ -177,7 +171,7 @@ class SnapshotScanner:
             if not await self.redis_queue.contains(node_id):
                 # 将节点加入优先级队列
                 await self.redis_queue.enqueue(node_id, priority)
-                logger.debug(f"节点 {node_id} 已加入队列，优先级: {priority} (连接数: {link_count})")
+                logger.debug(f"快照扫描: 节点 {node_id} 已加入队列，优先级分数: {priority} (连接数: {link_count})")
 
     async def _cleanup_offline_nodes(self, online_nodes: List[Dict]) -> None:
         """清理离线节点
@@ -195,6 +189,7 @@ class SnapshotScanner:
             RETURN n.node_id AS node_id
             """)
 
+            offline_count = 0
             # 检查每个活跃节点是否仍然在线
             async for record in result:
                 node_id = record['node_id']
@@ -203,4 +198,7 @@ class SnapshotScanner:
                     await self.neo4j_manager.set_node_inactive(node_id)
                     # 从优先级队列中移除
                     await self.redis_queue.remove(node_id)
-                    logger.debug(f"节点 {node_id} 已离线，已清理")
+                    offline_count += 1
+
+            if offline_count > 0:
+                logger.info(f"快照扫描: 已清理 {offline_count} 个离线节点")
