@@ -9,6 +9,7 @@
 """
 
 import logging
+import asyncio
 import aiohttp
 import re
 from typing import List, Dict, Optional
@@ -16,8 +17,9 @@ from ..queue.priority_queue import RedisPriorityQueue
 from ..database.neo4j_manager import Neo4jManager
 from ..config.settings import APIConfig
 from ..config.constants import (
-    NODE_RANK_CORE,
-    NODE_RANK_NORMAL
+    NODE_RANK_HUB,
+    NODE_RANK_REPEATER,
+    NODE_RANK_UNKNOWN
 )
 
 logger = logging.getLogger(__name__)
@@ -52,18 +54,18 @@ class SnapshotScanner:
     async def start(self) -> None:
         """启动快照扫描器
 
-        每5分钟执行一次扫描
+        每1小时执行一次扫描
         """
         logger.info("快照扫描器启动")
         while True:
             try:
                 await self.scan_and_update()
-                # 每5分钟运行一次
+                # 每1小时运行一次
                 await aiohttp.ClientSession().close()
-                await aiohttp.sleep(300)
+                await asyncio.sleep(3600)
             except Exception as e:
                 logger.error(f"快照扫描器运行异常: {e}")
-                await aiohttp.sleep(60)  # 出错后等待1分钟再重试
+                await asyncio.sleep(60)  # 出错后等待1分钟再重试
 
     async def scan_and_update(self) -> None:
         """扫描节点列表并更新优先级队列
@@ -163,6 +165,10 @@ class SnapshotScanner:
         for node in nodes:
             node_id = node['node_id']
             link_count = node['link_count']
+
+            # 只处理连接数大于0的节点
+            if link_count <= 0:
+                continue
 
             # 直接使用连接数作为优先级分数
             priority = link_count

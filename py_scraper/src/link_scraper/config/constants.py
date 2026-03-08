@@ -32,19 +32,18 @@ HARDWARE_KEYWORDS: Dict[str, List[str]] = {
 # 默认值
 DEFAULT_LATITUDE: float = 0.0
 DEFAULT_LONGITUDE: float = 0.0
-DEFAULT_UPTIME: int = 0
 DEFAULT_TOTAL_KEYUPS: int = 0
 DEFAULT_TOTAL_TX_TIME: int = 0
 DEFAULT_CONNECTIONS: int = 0
 
-# 节点类型
-NODE_TYPE_UNKNOWN: str = 'Unknown'
-NODE_TYPE_HUB: str = 'Hub'
-NODE_TYPE_REPEATER: str = 'Repeater'
+# 节点类型（平台类型）
+NODE_TYPE_ALLSTARLINK: str = 'allstarlink'
+NODE_TYPE_OTHERS: str = 'others'
 
-# 节点等级
-NODE_RANK_CORE: str = 'Core'
-NODE_RANK_NORMAL: str = 'Normal'
+# 节点等级（原节点类型定义）
+NODE_RANK_UNKNOWN: str = 'Unknown'
+NODE_RANK_HUB: str = 'Hub'
+NODE_RANK_REPEATER: str = 'Repeater'
 
 # 硬件类型
 HARDWARE_TYPE_UNKNOWN: str = 'Unknown'
@@ -59,9 +58,7 @@ CONNECTION_STATUS_INACTIVE: str = 'Inactive'
 # 连接方向
 CONNECTION_DIRECTION_UNKNOWN: str = 'Unknown'
 
-# 节点来源
-SOURCE_ALLSTARLINK: str = 'allstarlink'
-SOURCE_OTHER: str = 'other'
+
 
 # 失效关系清理阈值（分钟）
 STALE_RELATIONSHIP_THRESHOLD: int = 15

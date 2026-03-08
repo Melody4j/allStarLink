@@ -302,7 +302,7 @@ class RateLimiter:
 
 #### 运行统计属性
 
-- `uptime`: 运行时间（秒）
+- `apprptuptime`: 本次在线时长（秒），从API获取，更新到MySQL数据库
 - `total_keyups`: 累计按下PTT次数
 - `total_tx_time`: 累计发射时长（秒）
 - `connections`: 连接数（从linkedNodes长度计算）

@@ -53,7 +53,7 @@ class RedisPriorityQueue:
             await self.redis.zadd(self.queue_key, {str(node_id): priority})
             # 记录任务集合，用于去重
             await self.redis.sadd(self.task_set_key, str(node_id))
-            logger.info(f"Redis队列操作: 节点 {node_id} 已加入优先级队列，优先级分数: {priority}（连接数）")
+            # logger.info(f"Redis队列操作: 节点 {node_id} 已加入优先级队列，优先级分数: {priority}（连接数）")
             return True
         except Exception as e:
             logger.error(f"Redis队列操作失败: 节点 {node_id} 入队异常 - {e}")
