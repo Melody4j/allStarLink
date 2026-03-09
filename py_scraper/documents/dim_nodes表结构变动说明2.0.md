@@ -38,7 +38,7 @@ CREATE TABLE `dim_nodes` (
   `owner` varchar(100) DEFAULT NULL,
   `affiliation` varchar(100) DEFAULT NULL,
   `site_name` varchar(100) DEFAULT NULL COMMENT '最新物理站点名称',
-  `features` varchar(100) DEFAULT NULL COMMENT '最新功能标签',
+  `features` varchar(100) DEFAULT NULL COMMENT '最新功能标签(废弃)',
   `affiliation_type` varchar(20) DEFAULT NULL COMMENT '组织类型：Personal/Club/System',
   `country` varchar(100) DEFAULT NULL,
   `continent` varchar(50) DEFAULT NULL,
