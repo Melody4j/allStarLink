@@ -8,6 +8,9 @@ from typing import Dict, List
 QUEUE_KEY: str = 'asl_task_queue'
 TASK_SET_KEY: str = 'asl_task_set'
 
+# 批次号键名
+BATCH_NO_KEY: str = 'asl_current_batch_no'
+
 # 连接模式前缀
 CONNECTION_PREFIXES: Dict[str, str] = {
     'T': 'Transceive',

@@ -100,7 +100,8 @@ class Neo4jManager(BaseDatabaseManager):
                     'tone': node.tone,
                     'location_desc': node.location_desc,
                     'hardware_type': node.hardware_type,
-                    'connections': node.connections
+                    'connections': node.connections,
+                    'batch_no': node.batch_no
                 }
 
                 # 使用MERGE确保节点存在，然后更新属性

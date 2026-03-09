@@ -61,6 +61,7 @@ class Node:
     seqno: Optional[int] = None
     timeout: Optional[int] = None
     totalexecdcommands: Optional[int] = None
+    batch_no: Optional[str] = None
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -105,7 +106,8 @@ class Node:
             'access_reverseautopatch': self.access_reverseautopatch,
             'seqno': self.seqno,
             'timeout': self.timeout,
-            'totalexecdcommands': self.totalexecdcommands
+            'totalexecdcommands': self.totalexecdcommands,
+            'batch_no': int(self.batch_no) if self.batch_no is not None else None
         }
 
     def validate(self) -> bool:

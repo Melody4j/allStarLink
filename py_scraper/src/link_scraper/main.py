@@ -24,7 +24,7 @@ if __name__ == '__main__':
         pass
     else:
         # 本地开发环境
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         if project_root not in sys.path:
             sys.path.insert(0, project_root)
 
@@ -37,6 +37,7 @@ if __name__ == '__main__':
     from link_scraper.scrapers.api_worker import APIWorker
     from link_scraper.utils.logger import Logger
     from link_scraper.utils.rate_limiter import RateLimiter
+    from link_scraper.utils.batch_manager import BatchManager
 else:
     from .config.settings import Settings
     from .config.constants import QUEUE_KEY, TASK_SET_KEY
@@ -47,6 +48,7 @@ else:
     from .scrapers.api_worker import APIWorker
     from .utils.logger import Logger
     from .utils.rate_limiter import RateLimiter
+    from .utils.batch_manager import BatchManager
 
 logger = logging.getLogger(__name__)
 
@@ -126,11 +128,19 @@ class Neo4jScraperApp:
             time_window=self.config.api.rate_limit_window
         )
 
+        # 初始化批次管理器
+        self.batch_manager = BatchManager(self.redis_client)
+        # 初始化批次号
+        current_batch_no = await self.batch_manager.initialize_batch_no(self.mysql_manager)
+        logger.info(f"初始化批次号: {current_batch_no}")
+
         # 初始化快照扫描器
         self.snapshot_scanner = SnapshotScanner(
             redis_queue=self.priority_queue,
             neo4j_manager=self.neo4j_manager,
-            api_config=self.config.api
+            mysql_manager=self.mysql_manager,
+            api_config=self.config.api,
+            batch_manager=self.batch_manager
         )
 
         # 初始化API工作者
@@ -141,6 +151,10 @@ class Neo4jScraperApp:
             api_config=self.config.api,
             rate_limiter=self.rate_limiter
         )
+        # 设置初始批次号到APIWorker
+        if current_batch_no:
+            self.api_worker.set_batch_no(current_batch_no)
+            logger.info(f"已设置初始批次号 {current_batch_no} 到APIWorker")
 
         logger.info("Neo4j爬虫应用初始化完成")
 
@@ -169,6 +183,13 @@ class Neo4jScraperApp:
                     logger.info("触发新一轮节点列表扫描...")
                     # 触发一次快照扫描
                     await self.snapshot_scanner.scan_and_update()
+                    # 获取当前批次号并设置到APIWorker
+                    current_batch_no = self.snapshot_scanner.get_current_batch_no()
+                    if current_batch_no:
+                        self.api_worker.set_batch_no(current_batch_no)
+                        logger.info(f"已设置批次号 {current_batch_no} 到APIWorker")
+                    else:
+                        logger.warning("未能获取批次号，APIWorker将使用None作为批次号")
 
                     # 等待半小时再检查
                     await asyncio.sleep(1800)

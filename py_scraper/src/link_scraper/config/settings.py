@@ -2,6 +2,7 @@
 配置管理模块
 """
 
+import os
 from dataclasses import dataclass
 from typing import Dict
 
@@ -43,6 +44,8 @@ class APIConfig:
     max_retries: int
     retry_backoff: int
     cooldown_429: int
+    request_delay_min: float
+    request_delay_max: float
 
 
 @dataclass
@@ -87,11 +90,13 @@ class Settings:
             api=APIConfig(
                 base_url='https://stats.allstarlink.org/api/stats',
                 node_list_url='http://stats.allstarlink.org/api/stats/nodeList',
-                rate_limit=30,
+                rate_limit=int(os.getenv('RATE_LIMIT', '10')),
                 rate_limit_window=60,
                 max_retries=3,
                 retry_backoff=2,
-                cooldown_429=3600
+                cooldown_429=int(os.getenv('COOLDOWN_429', '60')),
+                request_delay_min=float(os.getenv('REQUEST_DELAY_MIN', '4.0')),
+                request_delay_max=float(os.getenv('REQUEST_DELAY_MAX', '6.0'))
             ),
             priority=PriorityConfig(
                 high=100,

@@ -44,6 +44,7 @@ class OdsNodeDetail:
     linked_nodes: Optional[List[Dict]] = None
     links: Optional[List[Dict]] = None
     port: Optional[str] = None
+    batch_no: Optional[str] = None
 
     def to_dict(self) -> Dict:
         """转换为字典"""
@@ -77,7 +78,8 @@ class OdsNodeDetail:
             'current_link_count': self.current_link_count,
             'linked_nodes': json.dumps(self.linked_nodes) if self.linked_nodes else None,
             'links': json.dumps(self.links) if self.links else None,
-            'port': self.port
+            'port': self.port,
+            'batch_no': int(self.batch_no) if self.batch_no is not None else None
         }
 
     def validate(self) -> bool:

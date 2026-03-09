@@ -15,12 +15,14 @@ import re
 from typing import List, Dict, Optional
 from ..queue.priority_queue import RedisPriorityQueue
 from ..database.neo4j_manager import Neo4jManager
+from ..database.mysql_manager import MySQLManager
 from ..config.settings import APIConfig
 from ..config.constants import (
     NODE_RANK_HUB,
     NODE_RANK_REPEATER,
     NODE_RANK_UNKNOWN
 )
+from ..utils.batch_manager import BatchManager
 
 logger = logging.getLogger(__name__)
 
@@ -38,18 +40,25 @@ class SnapshotScanner:
 
     def __init__(self, redis_queue: RedisPriorityQueue,
                  neo4j_manager: Neo4jManager,
-                 api_config: APIConfig) -> None:
+                 mysql_manager: MySQLManager,
+                 api_config: APIConfig,
+                 batch_manager: BatchManager) -> None:
         """初始化快照扫描器
 
         Args:
             redis_queue: Redis优先级队列实例
             neo4j_manager: Neo4j数据库管理器
+            mysql_manager: MySQL数据库管理器
             api_config: API配置
+            batch_manager: 批次管理器
         """
         self.redis_queue: RedisPriorityQueue = redis_queue
         self.neo4j_manager: Neo4jManager = neo4j_manager
+        self.mysql_manager: MySQLManager = mysql_manager
         self.api_config: APIConfig = api_config
+        self.batch_manager: BatchManager = batch_manager
         self.session: Optional[aiohttp.ClientSession] = None
+        self.current_batch_no: Optional[str] = None
 
     async def start(self) -> None:
         """启动快照扫描器
@@ -71,13 +80,16 @@ class SnapshotScanner:
         """扫描节点列表并更新优先级队列
 
         执行流程：
-        1. 创建HTTP会话
-        2. 获取节点列表
-        3. 解析节点数据
-        4. 更新优先级队列
-        5. 清理离线节点
+        1. 生成新的批次号
+        2. 创建HTTP会话
+        3. 获取节点列表
+        4. 解析节点数据
+        5. 更新优先级队列
+        6. 清理离线节点
         """
-        logger.info("开始扫描节点列表...")
+        # 生成新的批次号
+        self.current_batch_no = await self.batch_manager.get_or_create_batch_no(self.mysql_manager)
+        logger.info(f"开始扫描节点列表... 当前批次号: {self.current_batch_no}")
 
         try:
             # 创建HTTP会话
@@ -178,6 +190,14 @@ class SnapshotScanner:
                 # 将节点加入优先级队列
                 await self.redis_queue.enqueue(node_id, priority)
                 logger.debug(f"快照扫描: 节点 {node_id} 已加入队列，优先级分数: {priority} (连接数: {link_count})")
+
+    def get_current_batch_no(self) -> Optional[str]:
+        """获取当前批次号
+
+        Returns:
+            当前批次号
+        """
+        return self.current_batch_no
 
     async def _cleanup_offline_nodes(self, online_nodes: List[Dict]) -> None:
         """清理离线节点

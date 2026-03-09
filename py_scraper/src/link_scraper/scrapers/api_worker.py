@@ -11,6 +11,7 @@ API工作者
 import logging
 import aiohttp
 import asyncio
+import random
 from typing import Optional, Dict, List
 from datetime import datetime
 from ..queue.priority_queue import RedisPriorityQueue
@@ -56,6 +57,16 @@ class APIWorker:
         self.rate_limiter: RateLimiter = rate_limiter
         self.session: Optional[aiohttp.ClientSession] = None
         self.parser: NodeParser = NodeParser()
+        self.current_batch_no: Optional[str] = None
+
+    def set_batch_no(self, batch_no: str) -> None:
+        """设置当前批次号
+
+        Args:
+            batch_no: 批次号
+        """
+        self.current_batch_no = batch_no
+        logger.info(f"API工作者: 设置当前批次号为 {batch_no}")
 
     async def start(self) -> None:
         """启动API工作者
@@ -90,7 +101,13 @@ class APIWorker:
         # 从队列中获取任务
         node_id = await self.redis_queue.dequeue()
         if not node_id:
+            # 队列为空，由main.py统一管理扫描逻辑
             return
+
+        # 添加随机延迟，每次请求间隔在配置范围内
+        delay = random.uniform(self.api_config.request_delay_min, self.api_config.request_delay_max)
+        logger.debug(f"API工作者: 等待 {delay:.2f} 秒后处理节点 {node_id}")
+        await asyncio.sleep(delay)
 
         logger.info(f"API工作者: 开始处理节点 {node_id}")
         try:
@@ -169,6 +186,8 @@ class APIWorker:
                 return
 
             logger.debug(f"API工作者: 成功解析主节点数据 - ID:{node.node_id}, 类型:{node.node_type}, 呼号:{node.callsign}")
+            # 设置批次号
+            node.batch_no = self.current_batch_no
             # 更新Neo4j
             await self.neo4j_manager.update_node(node)
             logger.debug(f"API工作者: 已更新节点 {node.node_id} 的Neo4j数据")
@@ -199,6 +218,7 @@ class APIWorker:
             for linked_node in linked_nodes:
                 linked_node_obj = self.parser.parse_linked_node(linked_node)
                 if linked_node_obj:
+                    linked_node_obj.batch_no = self.current_batch_no
                     await self.neo4j_manager.update_node(linked_node_obj)
                     logger.debug(f"API工作者: 已更新连接节点 {linked_node_obj.node_id} 的Neo4j数据")
 
@@ -232,6 +252,8 @@ class APIWorker:
             try:
                 logger.debug(f"API工作者: 开始插入节点 {node.node_id} 的ODS详情...")
                 ods_detail = OdsNodeDetail.from_node_data(data)
+                ods_detail.batch_no = self.current_batch_no
+                logger.debug(f"API工作者: 节点 {node.node_id} 的批次号为 {self.current_batch_no}")
                 await self.mysql_manager.insert_ods_node_detail(ods_detail)
                 logger.info(f"API工作者: 成功插入节点 {node.node_id} 的ODS详情")
             except Exception as ods_error:

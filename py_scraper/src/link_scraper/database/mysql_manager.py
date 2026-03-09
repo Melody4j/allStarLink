@@ -90,6 +90,26 @@ class MySQLManager(BaseDatabaseManager):
         """
         logger.info("MySQL初始化完成（表结构已存在）")
 
+    async def execute_query(self, query: str) -> Optional[List[dict]]:
+        """执行查询语句
+
+        Args:
+            query: SQL查询语句
+
+        Returns:
+            查询结果列表，如果查询失败则返回None
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text(query))
+                # 将结果转换为字典列表
+                columns = result.keys()
+                rows = result.fetchall()
+                return [dict(zip(columns, row)) for row in rows]
+        except Exception as e:
+            logger.error(f"执行查询失败: {e}")
+            return None
+
     async def updateSingleNode(self, node: Node) -> None:
         """更新单个节点到MySQL
 
@@ -253,7 +273,7 @@ class MySQLManager(BaseDatabaseManager):
             raise
 
     async def insert_ods_node_detail(self, ods_detail: OdsNodeDetail) -> None:
-        """插入ODS节点详情到MySQL
+        """插入ODS节点详情到MySQL（纯插入策略，保留历史快照）
 
         Args:
             ods_detail: ODS节点详情对象
@@ -267,6 +287,9 @@ class MySQLManager(BaseDatabaseManager):
                 # 开启事务
                 trans = conn.begin()
                 try:
+                    # 记录批次号
+                    detail_dict = ods_detail.to_dict()
+                    logger.debug(f"准备插入ODS节点详情，batch_no: {detail_dict.get('batch_no')}")
                     stmt = text("""
                     INSERT INTO ods_nodes_details
                     (node_id, node_type, callsign, frequency, tone, affiliation, site_name,
@@ -274,50 +297,20 @@ class MySQLManager(BaseDatabaseManager):
                      is_nnx, total_keyups, total_tx_time, access_webtransceiver,
                      access_telephoneportal, access_functionlist, access_reverseautopatch,
                      seqno, timeout, apprptuptime, total_execd_commands, max_uptime,
-                     current_link_count, linked_nodes, links, port)
+                     current_link_count, linked_nodes, links, port, batch_no)
                     VALUES
                     (:node_id, :node_type, :callsign, :frequency, :tone, :affiliation, :site_name,
                      :is_active, :last_seen, :latitude, :longitude, :app_version, :ip, :timezone_offset,
                      :is_nnx, :total_keyups, :total_tx_time, :access_webtransceiver,
                      :access_telephoneportal, :access_functionlist, :access_reverseautopatch,
                      :seqno, :timeout, :apprptuptime, :total_execd_commands, :max_uptime,
-                     :current_link_count, :linked_nodes, :links, :port)
-                    ON DUPLICATE KEY UPDATE
-                    node_type = VALUES(node_type),
-                    callsign = VALUES(callsign),
-                    frequency = VALUES(frequency),
-                    tone = VALUES(tone),
-                    affiliation = VALUES(affiliation),
-                    site_name = VALUES(site_name),
-                    is_active = VALUES(is_active),
-                    last_seen = VALUES(last_seen),
-                    latitude = VALUES(latitude),
-                    longitude = VALUES(longitude),
-                    app_version = VALUES(app_version),
-                    ip = VALUES(ip),
-                    timezone_offset = VALUES(timezone_offset),
-                    is_nnx = VALUES(is_nnx),
-                    total_keyups = VALUES(total_keyups),
-                    total_tx_time = VALUES(total_tx_time),
-                    access_webtransceiver = VALUES(access_webtransceiver),
-                    access_telephoneportal = VALUES(access_telephoneportal),
-                    access_functionlist = VALUES(access_functionlist),
-                    access_reverseautopatch = VALUES(access_reverseautopatch),
-                    seqno = VALUES(seqno),
-                    timeout = VALUES(timeout),
-                    apprptuptime = VALUES(apprptuptime),
-                    total_execd_commands = VALUES(total_execd_commands),
-                    max_uptime = VALUES(max_uptime),
-                    current_link_count = VALUES(current_link_count),
-                    linked_nodes = VALUES(linked_nodes),
-                    links = VALUES(links),
-                    port = VALUES(port)
+                     :current_link_count, :linked_nodes, :links, :port, :batch_no)
                     """)
 
                     conn.execute(stmt, ods_detail.to_dict())
                     # 提交事务
                     trans.commit()
-                    logger.info(f"MySQL数据插入: 节点 {ods_detail.node_id} ODS详情已成功插入")
+                    logger.info(f"MySQL数据插入: 节点 {ods_detail.node_id} ODS详情已成功插入（保留历史快照）")
                 except Exception as e:
                     # 回滚事务
                     trans.rollback()
