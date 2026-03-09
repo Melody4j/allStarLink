@@ -5,7 +5,6 @@ Neo4j数据库管理器
 1. 连接管理
 2. 节点数据的插入和更新
 3. 连接关系的管理
-4. 失效关系的清理
 """
 
 import logging
@@ -27,7 +26,6 @@ class Neo4jManager(BaseDatabaseManager):
     - 管理数据库连接
     - 执行节点的UPSERT操作
     - 管理连接关系
-    - 清理失效的关系
     """
 
     def __init__(self, uri: str, user: str, password: str) -> None:
@@ -92,13 +90,11 @@ class Neo4jManager(BaseDatabaseManager):
                     'node_type': node.node_type,
                     'lat': node.lat,
                     'lon': node.lon,
-                    'uptime': node.uptime,
                     'total_keyups': node.total_keyups,
                     'total_tx_time': node.total_tx_time,
                     'last_seen': node.last_seen.isoformat() if node.last_seen else None,
                     'active': node.active,
                     'updated_at': node.updated_at.isoformat() if node.updated_at else None,
-                    'source': node.source,
                     'node_rank': node.node_rank,
                     'features': node.features,
                     'tone': node.tone,
@@ -155,9 +151,6 @@ class Neo4jManager(BaseDatabaseManager):
                         active=conn.active
                     )
 
-                # 清理失效的关系
-                await self._cleanup_stale_relationships(session, node_id, connections, current_time)
-
                 logger.debug(f"节点 {node_id} 拓扑关系已更新")
         except Exception as e:
             logger.error(f"更新节点 {node_id} 拓扑关系失败: {e}")
@@ -178,68 +171,5 @@ class Neo4jManager(BaseDatabaseManager):
                 logger.debug(f"节点 {node_id} 已设置为不活跃状态")
         except Exception as e:
             logger.error(f"设置节点 {node_id} 不活跃状态失败: {e}")
-            raise
 
-    async def _cleanup_stale_relationships(self, session, node_id: int,
-                                       current_connections: List[Connection],
-                                       current_time: str) -> None:
-        """清理失效的关系
 
-        Args:
-            session: Neo4j会话
-            node_id: 源节点ID
-            current_connections: 当前活跃的连接列表
-            current_time: 当前时间
-        """
-        try:
-            # 获取所有现有的关系
-            query = """
-            MATCH (src:Node {node_id: $src_id})-[r:CONNECTED_TO]->(dst:Node)
-            RETURN dst.node_id AS target_id, r.last_updated AS last_updated
-            """
-            result = await session.run(query, src_id=node_id)
-
-            # 构建当前连接的节点ID集合
-            current_target_ids = {conn.target_id for conn in current_connections}
-            stale_count = 0
-
-            # 检查每个关系是否仍然有效
-            async for record in result:
-                target_id = record['target_id']
-                last_updated = record['last_updated']
-
-                # 如果连接不再存在或超过阈值未更新，则禁用关系
-                if (target_id not in current_target_ids or 
-                    self._is_stale(last_updated, current_time)):
-                    await session.run("""
-                    MATCH (src:Node {node_id: $src_id})-[r:CONNECTED_TO]->(dst:Node {node_id: $dst_id})
-                    SET r.active = false
-                    """, src_id=node_id, dst_id=target_id)
-                    stale_count += 1
-                    logger.debug(f"Neo4j关系清理: 禁用节点 {node_id} 到 {target_id} 的失效关系")
-
-            if stale_count > 0:
-                logger.info(f"Neo4j关系清理: 节点 {node_id} 已清理 {stale_count} 个失效关系")
-        except Exception as e:
-            logger.error(f"Neo4j关系清理失败: 清理节点 {node_id} 失效关系异常 - {e}")
-
-    def _is_stale(self, last_updated: str, current_time: str,
-                  threshold_minutes: int = STALE_RELATIONSHIP_THRESHOLD) -> bool:
-        """检查关系是否过期
-
-        Args:
-            last_updated: 最后更新时间
-            current_time: 当前时间
-            threshold_minutes: 过期阈值（分钟）
-
-        Returns:
-            bool: 关系是否过期
-        """
-        try:
-            last_time = datetime.fromisoformat(last_updated)
-            curr_time = datetime.fromisoformat(current_time)
-            time_diff = (curr_time - last_time).total_seconds() / 60
-            return time_diff > threshold_minutes
-        except Exception as e:
-            logger.error(f"检查关系过期状态失败: {e}")
-            return True

@@ -19,6 +19,7 @@ from ..database.mysql_manager import MySQLManager
 from ..utils.rate_limiter import RateLimiter
 from ..scrapers.node_parser import NodeParser
 from ..config.settings import APIConfig
+from ..models.ods_node_detail import OdsNodeDetail
 
 logger = logging.getLogger(__name__)
 
@@ -201,32 +202,40 @@ class APIWorker:
                     await self.neo4j_manager.update_node(linked_node_obj)
                     logger.debug(f"API工作者: 已更新连接节点 {linked_node_obj.node_id} 的Neo4j数据")
 
-            # 更新MySQL（只更新AllStarLink节点）
-            if node.source == 'allstarlink':
-                logger.debug(f"API工作者: 开始更新节点 {node.node_id} 的MySQL数据...")
-                await self.mysql_manager.upsert_node(node)
-                logger.debug(f"API工作者: 已更新节点 {node.node_id} 的MySQL数据")
+            # 更新MySQL（更新所有节点类型）
+            logger.debug(f"API工作者: 开始更新节点 {node.node_id} 的MySQL数据...")
+            await self.mysql_manager.updateSingleNode(node)
+            logger.debug(f"API工作者: 已更新节点 {node.node_id} 的MySQL数据")
 
-                # 更新linkedNodes中的节点数据到MySQL
-                mysql_update_count = 0
-                for linked_node in linked_nodes:
-                    linked_node_id = linked_node.get('name')
-                    if linked_node_id and isinstance(linked_node_id, (int, str)):
-                        # 只处理整数类型的节点ID
-                        if isinstance(linked_node_id, int):
-                            linked_node_int = linked_node_id
-                        elif isinstance(linked_node_id, str) and linked_node_id.isdigit():
-                            linked_node_int = int(linked_node_id)
-                        else:
-                            continue
+            # 更新linkedNodes中的节点数据到MySQL
+            mysql_update_count = 0
+            for linked_node in linked_nodes:
+                linked_node_id = linked_node.get('name')
+                if linked_node_id and isinstance(linked_node_id, (int, str)):
+                    # 只处理整数类型的节点ID
+                    if isinstance(linked_node_id, int):
+                        linked_node_int = linked_node_id
+                    elif isinstance(linked_node_id, str) and linked_node_id.isdigit():
+                        linked_node_int = int(linked_node_id)
+                    else:
+                        continue
 
-                        linked_node_obj = self.parser.parse_linked_node(linked_node)
-                        if linked_node_obj and linked_node_obj.source == 'allstarlink':
-                            await self.mysql_manager.upsert_node(linked_node_obj)
-                            mysql_update_count += 1
+                    linked_node_obj = self.parser.parse_linked_node(linked_node)
+                    if linked_node_obj:
+                        await self.mysql_manager.updateSingleNode(linked_node_obj)
+                        mysql_update_count += 1
 
-                if mysql_update_count > 0:
-                    logger.info(f"API工作者: 已更新 {mysql_update_count} 个连接节点到MySQL")
+            if mysql_update_count > 0:
+                logger.info(f"API工作者: 已更新 {mysql_update_count} 个连接节点到MySQL")
+
+            # 插入ODS节点详情
+            try:
+                logger.debug(f"API工作者: 开始插入节点 {node.node_id} 的ODS详情...")
+                ods_detail = OdsNodeDetail.from_node_data(data)
+                await self.mysql_manager.insert_ods_node_detail(ods_detail)
+                logger.info(f"API工作者: 成功插入节点 {node.node_id} 的ODS详情")
+            except Exception as ods_error:
+                logger.error(f"API工作者: 插入节点 {node.node_id} 的ODS详情失败 - {ods_error}", exc_info=True)
 
             logger.debug("API工作者: 数据库更新完成")
         except Exception as e:

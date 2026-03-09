@@ -20,21 +20,18 @@ from ..config.constants import (
     HARDWARE_KEYWORDS,
     DEFAULT_LATITUDE,
     DEFAULT_LONGITUDE,
-    DEFAULT_UPTIME,
     DEFAULT_TOTAL_KEYUPS,
     DEFAULT_TOTAL_TX_TIME,
     DEFAULT_CONNECTIONS,
-    NODE_TYPE_UNKNOWN,
-    NODE_TYPE_HUB,
-    NODE_TYPE_REPEATER,
-    NODE_RANK_CORE,
-    NODE_RANK_NORMAL,
+    NODE_TYPE_ALLSTARLINK,
+    NODE_TYPE_OTHERS,
+    NODE_RANK_UNKNOWN,
+    NODE_RANK_HUB,
+    NODE_RANK_REPEATER,
     HARDWARE_TYPE_UNKNOWN,
     HARDWARE_TYPE_PERSONAL,
     HARDWARE_TYPE_INFRASTRUCTURE,
     HARDWARE_TYPE_EMBEDDED,
-    SOURCE_ALLSTARLINK,
-    SOURCE_OTHER,
     CONNECTION_STATUS_ACTIVE,
     CONNECTION_STATUS_INACTIVE,
     CONNECTION_DIRECTION_UNKNOWN
@@ -79,11 +76,18 @@ class NodeParser:
 
             # 提取节点基本信息
             node_id_value = user_node.get('name', 0)
+            node_id = int(node_id_value) if isinstance(node_id_value, (int, str)) else 0
 
             # 解析节点类型和等级
             node_type, node_rank, features = self._parse_node_info(
                 user_node.get('node_frequency', '')
             )
+
+            # 根据是否有node_id判断平台类型
+            if node_id > 0:
+                node_type = NODE_TYPE_ALLSTARLINK
+            else:
+                node_type = NODE_TYPE_OTHERS
 
             # 解析业务信息（tone和location_desc）
             tone, location_desc = self._parse_business_info(
@@ -99,16 +103,16 @@ class NodeParser:
             owner = user_node.get('User_ID', '')
             affiliation = server_info.get('Affiliation', '')
             site_name = server_info.get('Server_Name', '')
-            affiliation_type = self._classify_affiliation_type(affiliation, user_node.get('callsign', ''))
-            country = 'Unknown'  # 需要从API获取或通过坐标解析
-            continent = 'Unknown'  # 需要从API获取或通过坐标解析
-            mobility_type = 'Fixed'  # 默认固定节点
-            first_seen_at = datetime.now()
-            is_mobile = False  # 默认非移动节点
-            app_version = ''  # 需要从API获取
-            is_bridge = False  # 默认非网桥
+            #affiliation_type = self._classify_affiliation_type(affiliation, user_node.get('callsign', ''))
+            #country = 'Unknown'  # 需要从API获取或通过坐标解析
+            #continent = 'Unknown'  # 需要从API获取或通过坐标解析
+            #mobility_type = 'Fixed'  # 默认固定节点
+            #first_seen_at = datetime.now()
+            #is_mobile = False  # 默认非移动节点
+            #app_version = ''  # 需要从API获取
+            #is_bridge = False  # 默认非网桥
             access_webtransceiver = user_node.get('access_webtransceiver', '0') == '1'
-            ip_address = ''  # 需要从API获取
+            ip_address = user_node.get('ipaddr', '')  # 需要从API获取
             timezone_offset = None  # 需要从API获取
             is_nnx = user_node.get('is_nnx', 'No') == 'Yes'
             history_total_keyups = 0  # 累计值，需要从数据库读取
@@ -119,7 +123,6 @@ class NodeParser:
             seqno = int(node_data.get('seqno', 0) or 0)
             timeout = int(node_data.get('timeouts', 0) or 0)
             totalexecdcommands = int(node_data.get('totalexecdcommands', 0) or 0)
-            max_uptime = 0  # 累计值，需要从数据库读取
 
             # 构建节点对象
             node = Node(
@@ -128,13 +131,12 @@ class NodeParser:
                 node_type=node_type,
                 lat=float(server_info.get('Latitude', DEFAULT_LATITUDE) or DEFAULT_LATITUDE),
                 lon=float(server_info.get('Logitude', DEFAULT_LONGITUDE) or DEFAULT_LONGITUDE),
-                uptime=int(node_data.get('apprptuptime', DEFAULT_UPTIME) or DEFAULT_UPTIME),
+                apprptuptime=int(node_data.get('apprptuptime', 0) or 0),
                 total_keyups=int(node_data.get('totalkeyups', DEFAULT_TOTAL_KEYUPS) or DEFAULT_TOTAL_KEYUPS),
                 total_tx_time=int(node_data.get('totaltxtime', DEFAULT_TOTAL_TX_TIME) or DEFAULT_TOTAL_TX_TIME),
                 last_seen=datetime.now(),
                 active=True,
                 updated_at=datetime.now(),
-                source=SOURCE_ALLSTARLINK,
                 node_rank=node_rank,
                 features=features,
                 tone=tone,
@@ -145,14 +147,14 @@ class NodeParser:
                 owner=owner,
                 affiliation=affiliation,
                 site_name=site_name,
-                affiliation_type=affiliation_type,
-                country=country,
-                continent=continent,
-                mobility_type=mobility_type,
-                first_seen_at=first_seen_at,
-                is_mobile=is_mobile,
-                app_version=app_version,
-                is_bridge=is_bridge,
+                # affiliation_type=affiliation_type,
+                # country=country,
+                # continent=continent,
+                # mobility_type=mobility_type,
+                # first_seen_at=first_seen_at,
+                # is_mobile=is_mobile,
+                # app_version=app_version,
+                # is_bridge=is_bridge,
                 access_webtransceiver=access_webtransceiver,
                 ip_address=ip_address,
                 timezone_offset=timezone_offset,
@@ -164,8 +166,7 @@ class NodeParser:
                 access_reverseautopatch=access_reverseautopatch,
                 seqno=seqno,
                 timeout=timeout,
-                totalexecdcommands=totalexecdcommands,
-                max_uptime=max_uptime
+                totalexecdcommands=totalexecdcommands
             )
 
             return node
@@ -190,6 +191,8 @@ class NodeParser:
                 logger.warning("连接节点缺少name字段")
                 return None
 
+            node_id = int(linked_node_id) if isinstance(linked_node_id, (int, str)) else 0
+
             # 判断节点来源
             is_allstarlink = 'Node_ID' in linked_node
 
@@ -197,6 +200,12 @@ class NodeParser:
             node_type, node_rank, features = self._parse_node_info(
                 linked_node.get('node_frequency', '')
             )
+
+            # 根据是否有node_id判断平台类型
+            if node_id > 0:
+                node_type = NODE_TYPE_ALLSTARLINK
+            else:
+                node_type = NODE_TYPE_OTHERS
 
             # 解析业务信息
             tone, location_desc = self._parse_business_info(
@@ -223,13 +232,12 @@ class NodeParser:
                 node_type=node_type,
                 lat=lat,
                 lon=lon,
-                uptime=DEFAULT_UPTIME,
+                apprptuptime=0,
                 total_keyups=DEFAULT_TOTAL_KEYUPS,
                 total_tx_time=DEFAULT_TOTAL_TX_TIME,
                 last_seen=datetime.now(),
                 active=True,
                 updated_at=datetime.now(),
-                source=SOURCE_ALLSTARLINK if is_allstarlink else SOURCE_OTHER,
                 node_rank=node_rank,
                 features=features,
                 tone=tone,
@@ -298,9 +306,12 @@ class NodeParser:
 
         Returns:
             tuple: (node_type, node_rank, features)
+            - node_type: 平台类型 ('allstarlink' 或 'others')
+            - node_rank: 节点类型 ('Unknown', 'Hub', 'Repeater')
+            - features: 特性列表
         """
-        node_type = NODE_TYPE_UNKNOWN
-        node_rank = NODE_RANK_NORMAL
+        node_type = NODE_TYPE_OTHERS
+        node_rank = NODE_RANK_UNKNOWN
         features = []
 
         if not frequency:
@@ -308,11 +319,10 @@ class NodeParser:
 
         # 中继模式：若包含数字+频率特征（如 444.900）
         if re.search(r'\d+\.\d+', frequency):
-            node_type = NODE_TYPE_REPEATER
+            node_rank = NODE_RANK_REPEATER
         # 枢纽模式：若包含文本描述（如 HUB, System, Network）
-        elif any(keyword in frequency.upper() for keyword in NODE_TYPE_KEYWORDS[NODE_TYPE_HUB]):
-            node_rank = NODE_RANK_CORE
-            node_type = NODE_TYPE_HUB
+        elif any(keyword in frequency.upper() for keyword in NODE_TYPE_KEYWORDS[NODE_RANK_HUB]):
+            node_rank = NODE_RANK_HUB
             features.append(frequency)
 
         return node_type, node_rank, features

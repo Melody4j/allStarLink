@@ -8,14 +8,12 @@ from typing import List, Optional
 from ..config.constants import (
     DEFAULT_LATITUDE,
     DEFAULT_LONGITUDE,
-    DEFAULT_UPTIME,
     DEFAULT_TOTAL_KEYUPS,
     DEFAULT_TOTAL_TX_TIME,
     DEFAULT_CONNECTIONS,
-    NODE_TYPE_UNKNOWN,
-    NODE_RANK_NORMAL,
+    NODE_TYPE_OTHERS,
+    NODE_RANK_UNKNOWN,
     HARDWARE_TYPE_UNKNOWN,
-    SOURCE_ALLSTARLINK
 )
 
 
@@ -27,13 +25,12 @@ class Node:
     node_type: str
     lat: float
     lon: float
-    uptime: int
+    apprptuptime: int
     total_keyups: int
     total_tx_time: int
     last_seen: datetime
     active: bool
     updated_at: datetime
-    source: str
     node_rank: str
     features: List[str]
     tone: Optional[float]
@@ -64,7 +61,6 @@ class Node:
     seqno: Optional[int] = None
     timeout: Optional[int] = None
     totalexecdcommands: Optional[int] = None
-    max_uptime: Optional[int] = None
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -74,13 +70,12 @@ class Node:
             'node_type': self.node_type,
             'lat': self.lat,
             'lon': self.lon,
-            'uptime': self.uptime,
+            'apprptuptime': self.apprptuptime,
             'total_keyups': self.total_keyups,
             'total_tx_time': self.total_tx_time,
             'last_seen': self.last_seen.isoformat() if self.last_seen else None,
             'active': self.active,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
-            'source': self.source,
             'node_rank': self.node_rank,
             'features': self.features,
             'tone': self.tone,
@@ -110,8 +105,7 @@ class Node:
             'access_reverseautopatch': self.access_reverseautopatch,
             'seqno': self.seqno,
             'timeout': self.timeout,
-            'totalexecdcommands': self.totalexecdcommands,
-            'max_uptime': self.max_uptime
+            'totalexecdcommands': self.totalexecdcommands
         }
 
     def validate(self) -> bool:
@@ -129,7 +123,7 @@ class Node:
             return False
 
         # 验证统计值
-        if self.uptime < 0 or self.total_keyups < 0 or self.total_tx_time < 0:
+        if self.total_keyups < 0 or self.total_tx_time < 0:
             return False
 
         return True
@@ -141,17 +135,16 @@ class Node:
         return cls(
             node_id=node_id,
             callsign='',
-            node_type=NODE_TYPE_UNKNOWN,
+            node_type=NODE_TYPE_OTHERS,
             lat=DEFAULT_LATITUDE,
             lon=DEFAULT_LONGITUDE,
-            uptime=DEFAULT_UPTIME,
+            apprptuptime=0,
             total_keyups=DEFAULT_TOTAL_KEYUPS,
             total_tx_time=DEFAULT_TOTAL_TX_TIME,
             last_seen=now,
             active=False,
             updated_at=now,
-            source=SOURCE_OTHER,
-            node_rank=NODE_RANK_NORMAL,
+            node_rank=NODE_RANK_UNKNOWN,
             features=[],
             tone=None,
             location_desc=None,
@@ -161,10 +154,6 @@ class Node:
             owner=None,
             affiliation=None,
             site_name=None,
-            affiliation_type='Personal',
-            country='Unknown',
-            continent='Unknown',
-            mobility_type='Fixed',
             first_seen_at=now,
             is_mobile=False,
             app_version=None,
@@ -180,6 +169,5 @@ class Node:
             access_reverseautopatch=False,
             seqno=0,
             timeout=0,
-            totalexecdcommands=0,
-            max_uptime=0
+            totalexecdcommands=0
         )
