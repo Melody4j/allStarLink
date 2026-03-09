@@ -94,10 +94,10 @@ class APIWorker:
         logger.info(f"API工作者: 开始处理节点 {node_id}")
         try:
             # 获取节点详细数据
-            logger.debug(f"API工作者: 正在获取节点 {node_id} 的详细数据...")
+            logger.info(f"API工作者: 正在获取节点 {node_id} 的详细数据...")
             node_data = await self._fetch_node_data(node_id)
             if node_data:
-                logger.debug(f"API工作者: 成功获取节点 {node_id} 的数据，开始解析和更新数据库...")
+                logger.info(f"API工作者: 成功获取节点 {node_id} 的数据，开始解析和更新数据库...")
                 # 更新数据库
                 await self._update_databases(node_data)
                 logger.info(f"API工作者: 成功处理节点 {node_id}")
