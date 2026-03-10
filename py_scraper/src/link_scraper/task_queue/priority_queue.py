@@ -9,7 +9,7 @@ Redis优先级队列
 
 import logging
 import redis.asyncio as redis
-from typing import Optional
+from typing import Optional, List
 from ..config.constants import QUEUE_KEY, TASK_SET_KEY
 
 logger = logging.getLogger(__name__)
