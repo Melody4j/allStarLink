@@ -179,6 +179,26 @@ class APIWorker:
         """
         try:
             logger.debug("API工作者: 开始解析和更新数据库...")
+            
+            # 检查stats是否为空，如果为空则表示节点已下线
+            stats = data.get('stats', {})
+            if not stats:
+                logger.warning("API工作者: 节点stats为空，表示节点已下线，将从Neo4j删除")
+                # 从数据中获取node_id
+                node_id_value = data.get('node_id', '')
+                if node_id_value:
+                    node_id = str(node_id_value) if node_id_value else ''
+                    if node_id:
+                        # 使用当前批次号生成unique_id
+                        unique_id = f"{node_id}_{self.current_batch_no}"
+                        # 删除Neo4j中的节点及其连接关系
+                        deleted = await self.neo4j_manager.delete_node_by_unique_id(unique_id)
+                        if deleted:
+                            logger.info(f"API工作者: 已删除下线节点 {node_id} (unique_id: {unique_id}) 及其所有连接关系")
+                        else:
+                            logger.warning(f"API工作者: 删除下线节点 {node_id} (unique_id: {unique_id}) 失败")
+                return
+            
             # 解析主节点数据
             node = self.parser.parse_node(data)
             if not node:
@@ -199,6 +219,15 @@ class APIWorker:
             connection_modes = node_data.get('nodes', '')
 
             logger.info(f"API工作者: 发现 {len(linked_nodes)} 个连接节点")
+            
+            # 先更新linkedNodes中的节点数据到Neo4j（确保节点存在）
+            for linked_node in linked_nodes:
+                linked_node_obj = self.parser.parse_linked_node(linked_node)
+                if linked_node_obj:
+                    linked_node_obj.batch_no = self.current_batch_no
+                    await self.neo4j_manager.update_node(linked_node_obj)
+                    logger.debug(f"API工作者: 已更新连接节点 {linked_node_obj.node_id} 的Neo4j数据")
+            
             # 解析连接关系
             connections = self.parser.parse_connections(
                 node.node_id,
@@ -207,21 +236,13 @@ class APIWorker:
                 self.current_batch_no
             )
 
-            # 更新拓扑关系
+            # 更新拓扑关系（在所有节点都创建之后）
             if connections:
                 await self.neo4j_manager.update_topology(
                     node.node_id,
                     connections
                 )
                 logger.debug(f"API工作者: 已更新节点 {node.node_id} 的 {len(connections)} 个连接关系")
-
-            # 更新linkedNodes中的节点数据到Neo4j
-            for linked_node in linked_nodes:
-                linked_node_obj = self.parser.parse_linked_node(linked_node)
-                if linked_node_obj:
-                    linked_node_obj.batch_no = self.current_batch_no
-                    await self.neo4j_manager.update_node(linked_node_obj)
-                    logger.debug(f"API工作者: 已更新连接节点 {linked_node_obj.node_id} 的Neo4j数据")
 
             # 更新MySQL（更新所有节点类型）
             logger.debug(f"API工作者: 开始更新节点 {node.node_id} 的MySQL数据...")
