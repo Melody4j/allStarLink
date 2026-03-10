@@ -15,6 +15,7 @@ import signal
 import sys
 from typing import Optional
 import redis.asyncio as redis
+import argparse
 
 if __name__ == '__main__':
     # 在Docker环境中，/app是工作目录，包含link_scraper包
@@ -32,23 +33,30 @@ if __name__ == '__main__':
     from link_scraper.config.constants import QUEUE_KEY, TASK_SET_KEY
     from link_scraper.database.neo4j_manager import Neo4jManager
     from link_scraper.database.mysql_manager import MySQLManager
-    from link_scraper.queue.priority_queue import RedisPriorityQueue
+    from link_scraper.task_queue.priority_queue import RedisPriorityQueue
     from link_scraper.scrapers.snapshot_scanner import SnapshotScanner
     from link_scraper.scrapers.api_worker import APIWorker
     from link_scraper.utils.logger import Logger
     from link_scraper.utils.rate_limiter import RateLimiter
     from link_scraper.utils.batch_manager import BatchManager
 else:
-    from .config.settings import Settings
-    from .config.constants import QUEUE_KEY, TASK_SET_KEY
-    from .database.neo4j_manager import Neo4jManager
-    from .database.mysql_manager import MySQLManager
-    from .queue.priority_queue import RedisPriorityQueue
-    from .scrapers.snapshot_scanner import SnapshotScanner
-    from .scrapers.api_worker import APIWorker
-    from .utils.logger import Logger
-    from .utils.rate_limiter import RateLimiter
-    from .utils.batch_manager import BatchManager
+    # 当作为模块导入时，使用绝对导入
+    import sys
+    import os
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    
+    from link_scraper.config.settings import Settings
+    from link_scraper.config.constants import QUEUE_KEY, TASK_SET_KEY
+    from link_scraper.database.neo4j_manager import Neo4jManager
+    from link_scraper.database.mysql_manager import MySQLManager
+    from link_scraper.task_queue.priority_queue import RedisPriorityQueue
+    from link_scraper.scrapers.snapshot_scanner import SnapshotScanner
+    from link_scraper.scrapers.api_worker import APIWorker
+    from link_scraper.utils.logger import Logger
+    from link_scraper.utils.rate_limiter import RateLimiter
+    from link_scraper.utils.batch_manager import BatchManager
 
 logger = logging.getLogger(__name__)
 
@@ -235,8 +243,16 @@ class Neo4jScraperApp:
         signal.signal(signal.SIGTERM, signal_handler)
 
 
-async def main() -> None:
-    """主函数"""
+async def main(rate_limit: int = None, delay_max: float = None, 
+              delay_min: float = None, cooldown: int = None) -> None:
+    """主函数
+    
+    Args:
+        rate_limit: 爬取速率（每分钟请求数）
+        delay_max: 爬取最大间隔（秒）
+        delay_min: 爬取最小间隔（秒）
+        cooldown: 限速时冷却时间（秒）
+    """
     # 从环境变量读取日志级别，默认为INFO
     log_level_str = os.getenv('LOG_LEVEL', 'INFO').upper()
     log_level = getattr(logging, log_level_str, logging.INFO)
@@ -253,11 +269,27 @@ async def main() -> None:
         handler.setFormatter(formatter)
         root_logger.addHandler(handler)
     
-    # 设置应用日志
-    Logger.setup('link_scraper', level=log_level)
+    # 设置应用日志（不添加额外的handler，避免重复）
+    app_logger = logging.getLogger('link_scraper')
+    app_logger.setLevel(log_level)
+    # 不添加handler，让它继承根logger的handler
 
     # 加载配置
     config = Settings.load()
+
+    # 使用参数覆盖配置
+    if rate_limit is not None:
+        config.api.rate_limit = rate_limit
+        app_logger.info(f'使用参数覆盖爬取速率: {rate_limit}')
+    if delay_max is not None:
+        config.api.request_delay_max = delay_max
+        app_logger.info(f'使用参数覆盖最大间隔: {delay_max}')
+    if delay_min is not None:
+        config.api.request_delay_min = delay_min
+        app_logger.info(f'使用参数覆盖最小间隔: {delay_min}')
+    if cooldown is not None:
+        config.api.cooldown_429 = cooldown
+        app_logger.info(f'使用参数覆盖冷却时间: {cooldown}')
 
     # 创建并启动应用
     app = Neo4jScraperApp(config)
@@ -266,8 +298,25 @@ async def main() -> None:
 
 
 if __name__ == '__main__':
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='Neo4j拓扑爬虫')
+    parser.add_argument('rate_limit', type=int, nargs='?', default=None,
+                       help='爬取速率（每分钟请求数）')
+    parser.add_argument('delay_max', type=float, nargs='?', default=None,
+                       help='爬取最大间隔（秒）')
+    parser.add_argument('delay_min', type=float, nargs='?', default=None,
+                       help='爬取最小间隔（秒）')
+    parser.add_argument('cooldown', type=int, nargs='?', default=None,
+                       help='限速时冷却时间（秒）')
+    args = parser.parse_args()
+    
     try:
-        asyncio.run(main())
+        asyncio.run(main(
+            rate_limit=args.rate_limit,
+            delay_max=args.delay_max,
+            delay_min=args.delay_min,
+            cooldown=args.cooldown
+        ))
     except KeyboardInterrupt:
         logger.info("程序被用户中断")
         sys.exit(0)

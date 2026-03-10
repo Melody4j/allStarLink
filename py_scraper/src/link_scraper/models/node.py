@@ -62,6 +62,7 @@ class Node:
     timeout: Optional[int] = None
     totalexecdcommands: Optional[int] = None
     batch_no: Optional[str] = None
+    unique_id: Optional[str] = None  # 唯一标识符，用于区分同一节点在不同批次的实例
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -107,7 +108,8 @@ class Node:
             'seqno': self.seqno,
             'timeout': self.timeout,
             'totalexecdcommands': self.totalexecdcommands,
-            'batch_no': int(self.batch_no) if self.batch_no is not None else None
+            'batch_no': int(self.batch_no) if self.batch_no is not None else None,
+            'unique_id': self.unique_id
         }
 
     def validate(self) -> bool:

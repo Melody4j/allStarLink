@@ -36,8 +36,41 @@ COPY . .
 # 设置日志级别（可通过环境变量覆盖）
 ENV LOG_LEVEL=INFO
 
+# 设置爬取参数默认值（可通过环境变量覆盖）
+ENV RATE_LIMIT=60
+ENV DELAY_MAX=1
+ENV DELAY_MIN=0.8
+ENV COOLDOWN=30
+
 # 暴露端口（如果需要）
 # EXPOSE 8000
 
+# 创建启动脚本
+RUN echo '#!/bin/bash' > /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# 从环境变量读取参数，如果设置了则作为命令行参数传递' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'ARGS=""' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'if [ -n "$RATE_LIMIT" ]; then' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    ARGS="$ARGS $RATE_LIMIT"' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'fi' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'if [ -n "$DELAY_MAX" ]; then' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    ARGS="$ARGS $DELAY_MAX"' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'fi' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'if [ -n "$DELAY_MIN" ]; then' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    ARGS="$ARGS $DELAY_MIN"' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'fi' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'if [ -n "$COOLDOWN" ]; then' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '    ARGS="$ARGS $COOLDOWN"' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'fi' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo '# 执行命令，将参数传递给主程序' >> /usr/local/bin/docker-entrypoint.sh && \
+    echo 'exec "$@" $ARGS' >> /usr/local/bin/docker-entrypoint.sh && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # 运行程序
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["python", "-m", "link_scraper.main"]

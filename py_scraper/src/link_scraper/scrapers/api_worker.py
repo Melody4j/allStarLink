@@ -14,7 +14,7 @@ import asyncio
 import random
 from typing import Optional, Dict, List
 from datetime import datetime
-from ..queue.priority_queue import RedisPriorityQueue
+from ..task_queue.priority_queue import RedisPriorityQueue
 from ..database.neo4j_manager import Neo4jManager
 from ..database.mysql_manager import MySQLManager
 from ..utils.rate_limiter import RateLimiter
@@ -203,7 +203,8 @@ class APIWorker:
             connections = self.parser.parse_connections(
                 node.node_id,
                 connection_modes,
-                linked_nodes
+                linked_nodes,
+                self.current_batch_no
             )
 
             # 更新拓扑关系

@@ -253,13 +253,14 @@ class NodeParser:
             return None
 
     def parse_connections(self, node_id: int, connection_modes: str, 
-                        linked_nodes: List[Dict]) -> List[Connection]:
+                        linked_nodes: List[Dict], batch_no: Optional[str] = None) -> List[Connection]:
         """解析连接关系
 
         Args:
             node_id: 源节点ID
             connection_modes: 连接模式字符串，如"T62340,T68245"
             linked_nodes: 连接的节点列表
+            batch_no: 批次号
 
         Returns:
             List[Connection]: 解析后的连接关系列表
@@ -287,7 +288,8 @@ class NodeParser:
                     status=status,
                     direction=direction,
                     last_updated=datetime.now(),
-                    active=(status == CONNECTION_STATUS_ACTIVE)
+                    active=(status == CONNECTION_STATUS_ACTIVE),
+                    batch_no=batch_no
                 )
 
                 connections.append(conn)

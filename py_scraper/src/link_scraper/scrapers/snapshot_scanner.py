@@ -13,7 +13,7 @@ import asyncio
 import aiohttp
 import re
 from typing import List, Dict, Optional
-from ..queue.priority_queue import RedisPriorityQueue
+from ..task_queue.priority_queue import RedisPriorityQueue
 from ..database.neo4j_manager import Neo4jManager
 from ..database.mysql_manager import MySQLManager
 from ..config.settings import APIConfig

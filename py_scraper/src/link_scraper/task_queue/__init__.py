@@ -1,5 +1,5 @@
 """
-队列管理模块
+任务队列模块
 """
 
 from .priority_queue import RedisPriorityQueue

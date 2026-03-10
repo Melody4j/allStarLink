@@ -4,7 +4,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Optional
 from ..config.constants import (
     CONNECTION_STATUS_INACTIVE,
     CONNECTION_DIRECTION_UNKNOWN
@@ -20,6 +20,7 @@ class Connection:
     direction: Literal['Transceive', 'RX Only', 'Local', 'Permanent', 'Unknown']
     last_updated: datetime
     active: bool
+    batch_no: Optional[str] = None
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -29,7 +30,8 @@ class Connection:
             'status': self.status,
             'direction': self.direction,
             'last_updated': self.last_updated.isoformat() if self.last_updated else None,
-            'active': self.active
+            'active': self.active,
+            'batch_no': int(self.batch_no) if self.batch_no is not None else None
         }
 
     def validate(self) -> bool:
