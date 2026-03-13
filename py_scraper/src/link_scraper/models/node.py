@@ -20,7 +20,7 @@ from ..config.constants import (
 @dataclass
 class Node:
     """节点数据模型"""
-    node_id: int
+    node_id: str
     callsign: str
     node_type: str
     lat: float
@@ -115,7 +115,7 @@ class Node:
     def validate(self) -> bool:
         """验证数据有效性"""
         # 验证节点ID
-        if not isinstance(self.node_id, int) or self.node_id <= 0:
+        if not isinstance(self.node_id, str) or not self.node_id:
             return False
 
         # 验证坐标
@@ -133,7 +133,7 @@ class Node:
         return True
 
     @classmethod
-    def create_default(cls, node_id: int) -> 'Node':
+    def create_default(cls, node_id: str) -> 'Node':
         """创建默认节点"""
         now = datetime.now()
         return cls(

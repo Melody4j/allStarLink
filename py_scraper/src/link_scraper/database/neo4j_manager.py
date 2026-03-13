@@ -152,8 +152,8 @@ class Neo4jManager(BaseDatabaseManager):
             logger.error(f"更新节点 {node.node_id} 到Neo4j失败: {e}")
             raise
 
-    async def update_topology(self, node_id: int, connections: List[Connection]) -> None:
-        """更新节点拓扑关系到Neo4j
+    async def update_topology(self, node_id: str, connections: List[Connection]) -> None:
+        """更新节点拓扑关系到Neo4j（批量操作）
 
         Args:
             node_id: 源节点ID
@@ -163,43 +163,144 @@ class Neo4jManager(BaseDatabaseManager):
             async with self.driver.session() as session:
                 current_time = datetime.now().isoformat()
 
-                # 处理每个连接
-                for conn in connections:
-                    if not conn.validate():
-                        logger.warning(f"连接数据验证失败，跳过: {node_id} -> {conn.target_id}")
-                        continue
+                # 过滤无效连接
+                valid_connections = [conn for conn in connections if conn.validate()]
+                if not valid_connections:
+                    logger.warning(f"节点 {node_id} 没有有效的连接关系")
+                    return
 
-                    # 使用CREATE直接创建关系，不使用MERGE
-                    # 通过unique_id匹配节点
-                    query = """
-                    MATCH (src:Node {unique_id: $src_unique_id})
-                    MATCH (dst:Node {unique_id: $dst_unique_id})
-                    CREATE (src)-[r:CONNECTED_TO]->(dst)
-                    SET r.status = $status,
-                        r.direction = $direction,
+                # 批量检查已存在的连接
+                connection_pairs = [
+                    (f"{node_id}_{conn.batch_no}", f"{conn.target_id}_{conn.batch_no}", conn)
+                    for conn in valid_connections
+                ]
+
+                # 批量查询所有连接对
+                check_query = """
+                UNWIND $pairs AS pair
+                MATCH (a:Node {unique_id: pair.src_unique_id})-[r:CONNECTED_TO]-(b:Node {unique_id: pair.dst_unique_id})
+                RETURN pair.src_unique_id AS src_unique_id,
+                       pair.dst_unique_id AS dst_unique_id,
+                       pair.conn AS conn,
+                       r
+                """
+                result = await session.run(
+                    check_query,
+                    pairs=[
+                        {"src_unique_id": src, "dst_unique_id": dst, "conn": {"status": conn.status, "active": conn.active, "batch_no": conn.batch_no}}
+                        for src, dst, conn in connection_pairs
+                    ]
+                )
+                existing_connections = await result.data()
+
+                logger.debug(f"节点 {node_id}: 找到 {len(existing_connections)} 个已存在的连接")
+
+                # 提取已存在的连接对
+                existing_pairs = {(record["src_unique_id"], record["dst_unique_id"]) for record in existing_connections}
+
+                # 分离需要更新和需要创建的连接
+                to_update = [record for record in existing_connections]
+                to_create = [
+                    (src, dst, conn)
+                    for src, dst, conn in connection_pairs
+                    if (src, dst) not in existing_pairs and (dst, src) not in existing_pairs
+                ]
+
+                logger.debug(f"节点 {node_id}: 总共 {len(connection_pairs)} 个连接，需要更新 {len(to_update)} 个，需要创建 {len(to_create)} 个")
+
+                # 批量更新已存在的连接
+                if to_update:
+                    update_query = """
+                    UNWIND $updates AS update
+                    MATCH (a:Node {unique_id: update.src_unique_id})-[r:CONNECTED_TO]-(b:Node {unique_id: update.dst_unique_id})
+                    SET r.status = update.status,
                         r.last_updated = $last_updated,
-                        r.active = $active,
-                        r.batch_no = $batch_no
+                        r.active = update.active,
+                        r.batch_no = update.batch_no
                     """
-                    src_unique_id = f"{node_id}_{conn.batch_no}"
-                    dst_unique_id = f"{conn.target_id}_{conn.batch_no}"
-                    await session.run(
-                        query,
-                        src_unique_id=src_unique_id,
-                        dst_unique_id=dst_unique_id,
-                        status=conn.status,
-                        direction=conn.direction,
-                        last_updated=current_time,
-                        active=conn.active,
-                        batch_no=conn.batch_no
+                    result = await session.run(
+                        update_query,
+                        updates=[
+                            {
+                                "src_unique_id": record["src_unique_id"],
+                                "dst_unique_id": record["dst_unique_id"],
+                                "status": record["conn"]["status"],
+                                "active": record["conn"]["active"],
+                                "batch_no": record["conn"]["batch_no"]
+                            }
+                            for record in to_update
+                        ],
+                        last_updated=current_time
                     )
+                    # 等待更新操作完成
+                    await result.consume()
+                    logger.debug(f"批量更新 {len(to_update)} 个已存在的连接")
 
-                logger.debug(f"节点 {node_id} 拓扑关系已更新")
+                # 批量创建新连接
+                if to_create:
+                    # 先检查所有要创建连接的节点是否存在
+                    check_nodes_query = """
+                    UNWIND $node_ids AS node_id
+                    MATCH (n:Node {unique_id: node_id})
+                    RETURN node_id
+                    """
+                    all_node_ids = set([src for src, dst, conn in to_create] + [dst for src, dst, conn in to_create])
+                    node_check_result = await session.run(check_nodes_query, node_ids=list(all_node_ids))
+                    existing_nodes = set([record["node_id"] for record in await node_check_result.data()])
+                    
+                    # 找出不存在的节点
+                    missing_nodes = all_node_ids - existing_nodes
+                    if missing_nodes:
+                        logger.warning(f"节点 {node_id}: 以下节点不存在，无法创建连接: {missing_nodes}")
+                    
+                    # 过滤掉涉及不存在节点的连接
+                    valid_to_create = [
+                        (src, dst, conn)
+                        for src, dst, conn in to_create
+                        if src in existing_nodes and dst in existing_nodes
+                    ]
+                    
+                    if not valid_to_create:
+                        logger.warning(f"节点 {node_id}: 没有有效的连接可以创建（所有涉及的节点都不存在）")
+                    else:
+                        create_query = """
+                        UNWIND $creates AS create
+                        MATCH (src:Node {unique_id: create.src_unique_id})
+                        MATCH (dst:Node {unique_id: create.dst_unique_id})
+                        CREATE (src)-[r:CONNECTED_TO]->(dst)
+                        SET r.status = create.status,
+                            r.direction = create.direction,
+                            r.last_updated = $last_updated,
+                            r.active = create.active,
+                            r.batch_no = create.batch_no
+                        """
+                        result = await session.run(
+                            create_query,
+                            creates=[
+                                {
+                                    "src_unique_id": src,
+                                    "dst_unique_id": dst,
+                                    "status": conn.status,
+                                    "direction": conn.direction,
+                                    "active": conn.active,
+                                    "batch_no": conn.batch_no
+                                }
+                                for src, dst, conn in valid_to_create
+                            ],
+                            last_updated=current_time
+                        )
+                        # 等待创建操作完成
+                        await result.consume()
+                        logger.info(f"批量创建 {len(valid_to_create)} 个新连接")
+                        if len(valid_to_create) < len(to_create):
+                            logger.warning(f"节点 {node_id}: 跳过了 {len(to_create) - len(valid_to_create)} 个连接，因为相关节点不存在")
+
+                logger.debug(f"节点 {node_id} 拓扑关系已更新: 更新 {len(to_update)} 个, 创建 {len(to_create)} 个")
         except Exception as e:
             logger.error(f"更新节点 {node_id} 拓扑关系失败: {e}")
             raise
 
-    async def set_node_inactive(self, node_id: int, batch_no: str) -> None:
+    async def set_node_inactive(self, node_id: str, batch_no: str) -> None:
         """设置节点为不活跃状态
 
         Args:
@@ -275,5 +376,36 @@ class Neo4jManager(BaseDatabaseManager):
         except Exception as e:
             logger.error(f"获取最新批次号失败: {e}")
             raise
+
+    async def delete_node_by_unique_id(self, unique_id: str) -> bool:
+        """通过unique_id删除节点及其所有连接关系
+
+        Args:
+            unique_id: 节点的唯一标识符
+
+        Returns:
+            bool: 是否成功删除
+        """
+        try:
+            async with self.driver.session() as session:
+                # 先删除该节点的所有关系（包括入向和出向）
+                await session.run("""
+                MATCH (n:Node {unique_id: $unique_id})-[r]-()
+                DELETE r
+                """, unique_id=unique_id)
+                
+                # 再删除节点本身
+                result = await session.run("""
+                MATCH (n:Node {unique_id: $unique_id})
+                DELETE n
+                """, unique_id=unique_id)
+                
+                summary = await result.consume()
+                deleted_count = summary.counters.nodes_deleted
+                logger.info(f"已删除节点 {unique_id} 及其所有连接关系，共删除 {deleted_count} 个节点")
+                return deleted_count > 0
+        except Exception as e:
+            logger.error(f"删除节点 {unique_id} 失败: {e}")
+            return False
 
 

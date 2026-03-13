@@ -84,8 +84,9 @@ class SnapshotScanner:
         2. 创建HTTP会话
         3. 获取节点列表
         4. 解析节点数据
-        5. 更新优先级队列
-        6. 清理离线节点
+        5. 批量更新MySQL的dim_nodes表（500个一批）
+        6. 批量插入Redis优先级队列（500个一批）
+        7. 清理离线节点
         """
         # 生成新的批次号
         self.current_batch_no = await self.batch_manager.get_or_create_batch_no(self.mysql_manager)
@@ -108,8 +109,11 @@ class SnapshotScanner:
                 nodes = self._parse_node_list_json(json_data)
                 logger.info(f"扫描到 {len(nodes)} 个在线节点")
 
-                # 更新优先级队列
-                await self._update_priority_queue(nodes)
+                # 批量更新MySQL的dim_nodes表
+                await self._batch_update_mysql(nodes)
+
+                # 批量插入Redis优先级队列
+                await self._batch_enqueue_to_redis(nodes)
 
                 # 清理离线节点
                 await self._cleanup_offline_nodes(nodes)
@@ -190,6 +194,102 @@ class SnapshotScanner:
                 # 将节点加入优先级队列
                 await self.redis_queue.enqueue(node_id, priority)
                 logger.debug(f"快照扫描: 节点 {node_id} 已加入队列，优先级分数: {priority} (连接数: {link_count})")
+
+    async def _batch_update_mysql(self, nodes: List[Dict]) -> None:
+        """批量更新MySQL的dim_nodes表
+
+        将节点列表分批更新到MySQL，每批500个节点
+        Args:
+            nodes: 节点列表
+        """
+        if not nodes:
+            logger.info("没有需要更新的节点")
+            return
+
+        batch_size = 500
+        total_nodes = len(nodes)
+        total_batches = (total_nodes + batch_size - 1) // batch_size
+
+        logger.info(f"开始批量更新MySQL，共 {total_nodes} 个节点，分 {total_batches} 批处理")
+
+        for i in range(0, total_nodes, batch_size):
+            batch = nodes[i:i + batch_size]
+            batch_num = i // batch_size + 1
+            
+            try:
+                # 更新当前批次节点的连接数和最后在线时间
+                node_ids = [str(node['node_id']) for node in batch]
+                
+                # 构建批量更新SQL
+                query = f"""
+                UPDATE dim_nodes 
+                SET current_link_count = CASE node_id
+                    {''.join([f"WHEN {node_id} THEN {node['link_count']}" for node in batch])}
+                    ELSE current_link_count
+                END,
+                last_seen = NOW(),
+                is_active = 1
+                WHERE node_id IN ({','.join(node_ids)})
+                """
+                
+                await self.mysql_manager.execute_query(query)
+                logger.info(f"已更新MySQL第 {batch_num}/{total_batches} 批，包含 {len(batch)} 个节点")
+                
+            except Exception as e:
+                logger.error(f"批量更新MySQL第 {batch_num} 批失败: {e}")
+
+        logger.info(f"MySQL批量更新完成，共处理 {total_nodes} 个节点")
+
+    async def _batch_enqueue_to_redis(self, nodes: List[Dict]) -> None:
+        """批量插入Redis优先级队列
+
+        将节点列表分批插入到Redis队列，每批500个节点
+        在所有节点插入完成前，不允许从队列取数据
+        Args:
+            nodes: 节点列表
+        """
+        # 过滤出连接数大于1的节点
+        valid_nodes = [node for node in nodes if node['link_count'] > 1]
+        
+        if not valid_nodes:
+            logger.info("没有需要加入队列的节点（连接数都<=1）")
+            return
+
+        batch_size = 500
+        total_nodes = len(valid_nodes)
+        total_batches = (total_nodes + batch_size - 1) // batch_size
+
+        logger.info(f"开始批量插入Redis队列，共 {total_nodes} 个节点，分 {total_batches} 批处理")
+
+        # 在开始批量插入前获取锁
+        lock_acquired = await self.redis_queue.acquire_batch_lock()
+        if not lock_acquired:
+            logger.error("无法获取批量锁，批量插入操作被拒绝")
+            return
+
+        try:
+            total_added = 0
+            for i in range(0, total_nodes, batch_size):
+                batch = valid_nodes[i:i + batch_size]
+                batch_num = i // batch_size + 1
+                
+                try:
+                    # 准备批量入队的数据
+                    batch_data = [(node['node_id'], node['link_count']) for node in batch]
+                    
+                    # 使用RedisPriorityQueue的batch_enqueue方法
+                    added_count = await self.redis_queue.batch_enqueue(batch_data)
+                    total_added += added_count
+                    
+                    logger.info(f"已插入Redis队列第 {batch_num}/{total_batches} 批，本批新增 {added_count} 个节点")
+                    
+                except Exception as e:
+                    logger.error(f"批量插入Redis队列第 {batch_num} 批失败: {e}")
+
+            logger.info(f"Redis队列批量插入完成，共处理 {total_nodes} 个节点，实际新增 {total_added} 个节点")
+        finally:
+            # 所有节点插入完成后释放锁
+            await self.redis_queue.release_batch_lock()
 
     def get_current_batch_no(self) -> Optional[str]:
         """获取当前批次号

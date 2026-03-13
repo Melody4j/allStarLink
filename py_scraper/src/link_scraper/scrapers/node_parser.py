@@ -75,8 +75,8 @@ class NodeParser:
             node_data = stats.get('data', {})
 
             # 提取节点基本信息
-            node_id_value = user_node.get('name', 0)
-            node_id = int(node_id_value) if isinstance(node_id_value, (int, str)) else 0
+            node_id_value = user_node.get('name', '')
+            node_id = str(node_id_value) if node_id_value else ''
 
             # 解析节点类型和等级
             node_type, node_rank, features = self._parse_node_info(
@@ -84,7 +84,7 @@ class NodeParser:
             )
 
             # 根据是否有node_id判断平台类型
-            if node_id > 0:
+            if node_id:
                 node_type = NODE_TYPE_ALLSTARLINK
             else:
                 node_type = NODE_TYPE_OTHERS
@@ -126,7 +126,7 @@ class NodeParser:
 
             # 构建节点对象
             node = Node(
-                node_id=int(node_id_value) if isinstance(node_id_value, (int, str)) else 0,
+                node_id=str(node_id_value) if node_id_value else '',
                 callsign=user_node.get('callsign', ''),
                 node_type=node_type,
                 lat=float(server_info.get('Latitude', DEFAULT_LATITUDE) or DEFAULT_LATITUDE),
@@ -191,7 +191,7 @@ class NodeParser:
                 logger.warning("连接节点缺少name字段")
                 return None
 
-            node_id = int(linked_node_id) if isinstance(linked_node_id, (int, str)) else 0
+            node_id = str(linked_node_id) if linked_node_id else ''
 
             # 判断节点来源
             is_allstarlink = 'Node_ID' in linked_node
@@ -202,7 +202,7 @@ class NodeParser:
             )
 
             # 根据是否有node_id判断平台类型
-            if node_id > 0:
+            if node_id:
                 node_type = NODE_TYPE_ALLSTARLINK
             else:
                 node_type = NODE_TYPE_OTHERS
@@ -227,7 +227,7 @@ class NodeParser:
 
             # 构建节点对象
             node = Node(
-                node_id=int(linked_node_id) if isinstance(linked_node_id, (int, str)) else 0,
+                node_id=str(linked_node_id) if linked_node_id else '',
                 callsign=linked_node.get('callsign', ''),
                 node_type=node_type,
                 lat=lat,
@@ -283,8 +283,8 @@ class NodeParser:
 
                 # 创建连接对象
                 conn = Connection(
-                    source_id=node_id,
-                    target_id=int(target_id) if isinstance(target_id, (int, str)) else 0,
+                    source_id=str(node_id),
+                    target_id=str(target_id),
                     status=status,
                     direction=direction,
                     last_updated=datetime.now(),
@@ -432,7 +432,8 @@ class NodeParser:
             prefix = item[0] if item else ''
             node_id = item[1:] if len(item) > 1 else ''
 
-            if node_id.isdigit():
+            # 支持数字和字母节点ID
+            if node_id:  # 只要node_id不为空就处理
                 connection_dict[node_id] = CONNECTION_PREFIXES.get(prefix, CONNECTION_DIRECTION_UNKNOWN)
 
         return connection_dict

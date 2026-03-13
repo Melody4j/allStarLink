@@ -14,8 +14,8 @@ from ..config.constants import (
 @dataclass
 class Connection:
     """连接关系模型"""
-    source_id: int
-    target_id: int
+    source_id: str
+    target_id: str
     status: Literal['Active', 'Inactive']
     direction: Literal['Transceive', 'RX Only', 'Local', 'Permanent', 'Unknown']
     last_updated: datetime
@@ -31,15 +31,15 @@ class Connection:
             'direction': self.direction,
             'last_updated': self.last_updated.isoformat() if self.last_updated else None,
             'active': self.active,
-            'batch_no': int(self.batch_no) if self.batch_no is not None else None
+            'batch_no': self.batch_no
         }
 
     def validate(self) -> bool:
         """验证数据有效性"""
         # 验证节点ID
-        if not isinstance(self.source_id, int) or self.source_id <= 0:
+        if not isinstance(self.source_id, str) or not self.source_id:
             return False
-        if not isinstance(self.target_id, int) or self.target_id <= 0:
+        if not isinstance(self.target_id, str) or not self.target_id:
             return False
 
         # 验证状态和方向
@@ -55,7 +55,7 @@ class Connection:
         return True
 
     @classmethod
-    def create_default(cls, source_id: int, target_id: int) -> 'Connection':
+    def create_default(cls, source_id: str, target_id: str) -> 'Connection':
         """创建默认连接"""
         now = datetime.now()
         return cls(
