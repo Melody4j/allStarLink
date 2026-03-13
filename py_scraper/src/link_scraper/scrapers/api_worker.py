@@ -220,7 +220,7 @@ class APIWorker:
                 linked_node_obj = self.parser.parse_linked_node(linked_node)
                 if linked_node_obj:
                     linked_node_obj.batch_no = self.current_batch_no
-                    await self.neo4j_manager.update_node(linked_node_obj)
+                    await self.neo4j_manager.update_node(linked_node_obj, preserve_counters=True)
                     logger.debug(f"API工作者: 已更新连接节点 {linked_node_obj.node_id} 的Neo4j数据")
 
             # 更新MySQL（更新所有节点类型）
