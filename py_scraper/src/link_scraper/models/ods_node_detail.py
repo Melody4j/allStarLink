@@ -4,7 +4,7 @@ ODS节点详情数据模型
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 import json
 
 
@@ -42,7 +42,7 @@ class OdsNodeDetail:
     max_uptime: Optional[int] = None
     current_link_count: Optional[int] = None
     linked_nodes: Optional[List[Dict]] = None
-    links: Optional[List[Dict]] = None
+    links: Optional[Any] = None
     port: Optional[str] = None
     batch_no: Optional[str] = None
 
@@ -77,7 +77,7 @@ class OdsNodeDetail:
             'max_uptime': self.max_uptime,
             'current_link_count': self.current_link_count,
             'linked_nodes': json.dumps(self.linked_nodes) if self.linked_nodes else None,
-            'links': json.dumps(self.links) if self.links else None,
+            'links': json.dumps(self.links) if self.links is not None else None,
             'port': self.port,
             'batch_no': int(self.batch_no) if self.batch_no is not None else None
         }
@@ -130,9 +130,8 @@ class OdsNodeDetail:
         access_functionlist = user_node.get('access_functionlist', '0') == '1'
         access_reverseautopatch = user_node.get('access_reverseautopatch', '0') == '1'
 
-        # 解析linked_nodes和links
-        # links直接从API的stats.data.links获取
-        links_list = data.get('links', [])
+        # linked_nodes保留结构化列表，links保留原始 nodes 字符串
+        links_value = data.get('nodes')
 
         # 解析端口
         port = None
@@ -170,6 +169,6 @@ class OdsNodeDetail:
             max_uptime=None,  # 需要从历史数据计算
             current_link_count=len(linked_nodes),
             linked_nodes=linked_nodes,
-            links=links_list,
+            links=links_value,
             port=port
         )

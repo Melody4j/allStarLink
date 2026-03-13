@@ -110,7 +110,7 @@ class MySQLManager(BaseDatabaseManager):
             logger.error(f"执行查询失败: {e}")
             return None
 
-    async def updateSingleNode(self, node: Node) -> None:
+    async def updateSingleNode(self, node: Node, update_current_link_count: bool = True) -> None:
         """更新单个节点到MySQL
 
         使用UPDATE语法更新指定字段：
@@ -133,24 +133,30 @@ class MySQLManager(BaseDatabaseManager):
                 # 开启事务
                 trans = conn.begin()
                 try:
-                    stmt = text("""
+                    set_clauses = [
+                        "access_webtransceiver = :access_webtransceiver",
+                        "ip_address = :ip_address",
+                        "timezone_offset = :timezone_offset",
+                        "is_nnx = :is_nnx",
+                        "history_total_keyups = :history_total_keyups",
+                        "history_tx_time = :history_tx_time",
+                        "access_telephoneportal = :access_telephoneportal",
+                        "access_functionlist = :access_functionlist",
+                        "access_reverseautopatch = :access_reverseautopatch",
+                        "seqno = :seqno",
+                        "timeout = :timeout",
+                        "totalexecdcommands = :totalexecdcommands",
+                        "site_name = :site_name",
+                        "node_type = :node_type"
+                    ]
+                    if node.apprptuptime is not None:
+                        set_clauses.append("apprptuptime = :apprptuptime")
+                    if update_current_link_count:
+                        set_clauses.append("current_link_count = :current_link_count")
+
+                    stmt = text(f"""
                     UPDATE dim_nodes SET
-                    access_webtransceiver = :access_webtransceiver,
-                    ip_address = :ip_address,
-                    timezone_offset = :timezone_offset,
-                    is_nnx = :is_nnx,
-                    history_total_keyups = :history_total_keyups,
-                    history_tx_time = :history_tx_time,
-                    access_telephoneportal = :access_telephoneportal,
-                    access_functionlist = :access_functionlist,
-                    access_reverseautopatch = :access_reverseautopatch,
-                    seqno = :seqno,
-                    timeout = :timeout,
-                    totalexecdcommands = :totalexecdcommands,
-                    apprptuptime = :apprptuptime,
-                    site_name = :site_name,
-                    current_link_count = :current_link_count,
-                    node_type = :node_type
+                    {", ".join(set_clauses)}
                     WHERE node_id = :node_id
                     """)
 
@@ -194,7 +200,7 @@ class MySQLManager(BaseDatabaseManager):
                         'access_reverseautopatch': 1 if node.access_reverseautopatch else 0,
                         'seqno': node.seqno if node.seqno is not None else 0,
                         'timeout': node.timeout if node.timeout is not None else 0,
-                        'apprptuptime': node.apprptuptime if node.apprptuptime is not None else 0,
+                        'apprptuptime': node.apprptuptime,
                         'totalexecdcommands': node.totalexecdcommands if node.totalexecdcommands is not None else 0,
                         'current_link_count': node.connections
                     })

@@ -232,9 +232,9 @@ class NodeParser:
                 node_type=node_type,
                 lat=lat,
                 lon=lon,
-                apprptuptime=0,
-                total_keyups=DEFAULT_TOTAL_KEYUPS,
-                total_tx_time=DEFAULT_TOTAL_TX_TIME,
+                apprptuptime=None,
+                total_keyups=None,
+                total_tx_time=None,
                 last_seen=datetime.now(),
                 active=True,
                 updated_at=datetime.now(),
@@ -243,7 +243,7 @@ class NodeParser:
                 tone=tone,
                 location_desc=location_desc,
                 hardware_type=hardware_type,
-                connections=DEFAULT_CONNECTIONS
+                connections=None
             )
 
             return node

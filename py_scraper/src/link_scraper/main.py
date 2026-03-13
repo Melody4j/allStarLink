@@ -145,7 +145,6 @@ class Neo4jScraperApp:
         # 初始化快照扫描器
         self.snapshot_scanner = SnapshotScanner(
             redis_queue=self.priority_queue,
-            neo4j_manager=self.neo4j_manager,
             mysql_manager=self.mysql_manager,
             api_config=self.config.api,
             batch_manager=self.batch_manager

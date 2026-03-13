@@ -25,9 +25,9 @@ class Node:
     node_type: str
     lat: float
     lon: float
-    apprptuptime: int
-    total_keyups: int
-    total_tx_time: int
+    apprptuptime: Optional[int]
+    total_keyups: Optional[int]
+    total_tx_time: Optional[int]
     last_seen: datetime
     active: bool
     updated_at: datetime
@@ -36,7 +36,7 @@ class Node:
     tone: Optional[float]
     location_desc: Optional[str]
     hardware_type: str
-    connections: int
+    connections: Optional[int]
     # dim_nodes V2.0 新增字段
     owner: Optional[str] = None
     affiliation: Optional[str] = None
@@ -127,7 +127,9 @@ class Node:
             return False
 
         # 验证统计值
-        if self.total_keyups < 0 or self.total_tx_time < 0:
+        if self.total_keyups is not None and self.total_keyups < 0:
+            return False
+        if self.total_tx_time is not None and self.total_tx_time < 0:
             return False
 
         return True

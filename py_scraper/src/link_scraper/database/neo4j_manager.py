@@ -86,7 +86,7 @@ class Neo4jManager(BaseDatabaseManager):
             logger.error(f"初始化Neo4j约束失败: {e}")
             raise
 
-    async def update_node(self, node: Node, preserve_counters: bool = False) -> None:
+    async def update_node(self, node: Node, preserve_counters: bool = False, preserve_uptime: bool = False) -> None:
         """更新节点数据到Neo4j
 
         Args:
@@ -108,6 +108,7 @@ class Neo4jManager(BaseDatabaseManager):
                     'node_type': node.node_type,
                     'lat': node.lat,
                     'lon': node.lon,
+                    'apprptuptime': node.apprptuptime,
                     'total_keyups': node.total_keyups,
                     'total_tx_time': node.total_tx_time,
                     'last_seen': node.last_seen.isoformat() if node.last_seen else None,
@@ -118,6 +119,7 @@ class Neo4jManager(BaseDatabaseManager):
                     'tone': node.tone,
                     'location_desc': node.location_desc,
                     'hardware_type': node.hardware_type,
+                    'siteName': node.site_name,
                     'connections': node.connections,
                     'batch_no': node.batch_no
                 }
@@ -129,6 +131,8 @@ class Neo4jManager(BaseDatabaseManager):
                     match_properties = properties.copy()
                     match_properties.pop('total_keyups', None)
                     match_properties.pop('total_tx_time', None)
+                    if preserve_uptime:
+                        match_properties.pop('apprptuptime', None)
                     query = """
                     MERGE (n:Node {unique_id: $unique_id})
                     ON CREATE SET n = $create_properties
@@ -141,12 +145,28 @@ class Neo4jManager(BaseDatabaseManager):
                         match_properties=match_properties
                     )
                 else:
-                    query = """
-                    MERGE (n:Node {unique_id: $unique_id})
-                    ON CREATE SET n = $properties
-                    ON MATCH SET n = $properties
-                    """
-                    await session.run(query, unique_id=unique_id, properties=properties)
+                    if preserve_uptime:
+                        create_properties = properties.copy()
+                        match_properties = properties.copy()
+                        match_properties.pop('apprptuptime', None)
+                        query = """
+                        MERGE (n:Node {unique_id: $unique_id})
+                        ON CREATE SET n = $create_properties
+                        ON MATCH SET n += $match_properties
+                        """
+                        await session.run(
+                            query,
+                            unique_id=unique_id,
+                            create_properties=create_properties,
+                            match_properties=match_properties
+                        )
+                    else:
+                        query = """
+                        MERGE (n:Node {unique_id: $unique_id})
+                        ON CREATE SET n = $properties
+                        ON MATCH SET n = $properties
+                        """
+                        await session.run(query, unique_id=unique_id, properties=properties)
                 logger.debug(f"节点 {node.node_id} (批次{node.batch_no}) 数据已更新到Neo4j")
         except Exception as e:
             logger.error(f"更新节点 {node.node_id} 到Neo4j失败: {e}")
