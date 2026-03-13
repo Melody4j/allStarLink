@@ -1,437 +1,341 @@
 # 新版爬虫架构说明
 
-本文档以 `src/link_scraper` 当前代码为准，聚焦新版爬虫的项目结构、关键模块职责、执行流程以及相关 API 返回数据说明。
+本文档以 `src/link_scraper` 当前代码为准，描述 2026-03-13 完成本轮重构后的真实架构。
 
-## 1. 项目概览
+当前项目范围明确如下：
 
-新版爬虫是一个异步拓扑抓取程序，核心目标是：
+- 当前生产主线只关注 `AllStarLink`
+- 第二数据源只保留 adapter 骨架，不做真实采集
+- 当前代码已经完成结构化重构、单元测试补齐和一轮真实环境联调
 
-- 从 AllStarLink API 获取在线节点列表和节点详情
-- 使用 Redis 优先级队列调度节点抓取顺序
-- 将节点及其连接关系写入 Neo4j
-- 将节点当前状态和 ODS 明细写入 MySQL
+## 1. 当前主入口
 
-当前主入口为：
+主入口：
 
 - `src/link_scraper/main.py`
 
-核心流程分为两段：
+主入口当前负责：
 
-1. `SnapshotScanner` 扫描在线节点列表，生成抓取任务
-2. `APIWorker` 消费任务，抓取节点详情并落库
+- 加载配置
+- 初始化 Redis、MySQL、Neo4j
+- 初始化批次号管理与限流器
+- 通过 source factory 构建数据源组件
+- 组装扫描器、服务层、仓储层、Worker
+- 驱动“快照扫描 -> 队列消费 -> 落库”主流程
 
-## 2. 项目结构
-
-### 2.1 目录结构
+## 2. 当前目录结构
 
 ```text
 src/link_scraper/
 ├─ main.py
 ├─ config/
-│  ├─ settings.py
-│  └─ constants.py
+│  ├─ constants.py
+│  └─ settings.py
 ├─ database/
 │  ├─ base.py
 │  ├─ mysql_manager.py
-│  └─ neo4j_manager.py
-├─ models/
-│  ├─ node.py
-│  ├─ connection.py
-│  └─ ods_node_detail.py
+│  ├─ neo4j_manager.py
+│  └─ __init__.py
+├─ domain/
+│  ├─ models.py
+│  └─ __init__.py
+├─ models/                     # 旧模型，当前主要作为兼容层保留
+├─ repositories/
+│  ├─ records.py
+│  ├─ mappers.py
+│  ├─ graph_repository.py
+│  ├─ dim_node_repository.py
+│  ├─ ods_repository.py
+│  └─ __init__.py
 ├─ scrapers/
 │  ├─ snapshot_scanner.py
 │  ├─ api_worker.py
-│  └─ node_parser.py
+│  ├─ node_parser.py
+│  └─ __init__.py
+├─ services/
+│  ├─ fetch_service.py
+│  ├─ parse_service.py
+│  ├─ sync_service.py
+│  ├─ ods_service.py
+│  └─ __init__.py
+├─ sources/
+│  ├─ base.py
+│  ├─ factory.py
+│  ├─ allstarlink/
+│  │  ├─ client.py
+│  │  ├─ parser.py
+│  │  ├─ mapper.py
+│  │  └─ __init__.py
+│  ├─ other_source/            # 仅保留 Phase 4 骨架
+│  └─ __init__.py
 ├─ task_queue/
 │  └─ priority_queue.py
 └─ utils/
    ├─ batch_manager.py
-   ├─ rate_limiter.py
    ├─ logger.py
-   ├─ helpers.py
-   └─ helpers_new.py
+   ├─ rate_limiter.py
+   └─ helpers.py
 ```
 
-### 2.2 模块职责
+## 3. 当前分层结构
 
-#### `main.py`
+本轮重构后，主流程已经从早期的：
 
-负责：
+```text
+worker -> parser -> manager
+```
 
-- 加载配置
-- 初始化 Redis、Neo4j、MySQL
-- 初始化速率限制器和批次号管理器
-- 创建 `SnapshotScanner` 和 `APIWorker`
-- 根据 Redis 队列状态触发新一轮快照扫描
+演进为：
 
-#### `scrapers/snapshot_scanner.py`
+```text
+worker -> services -> repositories -> managers
+                    ^
+                    |
+                 sources
+```
 
-负责：
+各层职责如下。
 
-- 请求在线节点列表接口
-- 解析节点 ID 和连接数
-- 批量更新 `dim_nodes.current_link_count`
-- 将高优先级节点放入 Redis 队列
+### 3.1 Source Adapter 层
 
-#### `scrapers/api_worker.py`
+目录：
 
-负责：
+- `src/link_scraper/sources/base.py`
+- `src/link_scraper/sources/factory.py`
+- `src/link_scraper/sources/allstarlink/`
 
-- 从 Redis 队列取节点 ID
-- 调用节点详情接口
-- 调用 `NodeParser` 解析主节点、子节点、连接关系
-- 更新 Neo4j 节点和关系
-- 更新 MySQL `dim_nodes`
-- 写入 MySQL `ods_nodes_details`
+职责：
 
-#### `scrapers/node_parser.py`
+- 隔离 AllStarLink 的接口契约
+- 提供统一的 client / parser / mapper 抽象
+- 让主流程不再依赖 AllStarLink 的原始 JSON 细节
 
-负责：
+当前状态：
 
-- 解析主节点详情
-- 解析连接子节点
-- 解析连接关系方向和状态
-- 提取业务字段、位置字段、硬件类型、节点类型等信息
+- `AllStarLink` 已经完整接入 adapter 边界
+- `other_source` 只保留骨架，不参与当前生产流程
 
-#### `database/neo4j_manager.py`
+### 3.2 领域模型层
 
-负责：
+目录：
 
-- 初始化 Neo4j 唯一约束
-- 按 `unique_id` 更新节点
-- 更新 `CONNECTED_TO` 关系
-- 查询指定批次拓扑
-- 删除指定节点
+- `src/link_scraper/domain/models.py`
 
-#### `database/mysql_manager.py`
+职责：
 
-负责：
+- 承接 source mapper 输出的统一语义模型
+- 提供 source 无关的节点、连接、聚合结果表达
 
-- 更新 `dim_nodes`
-- 插入 `ods_nodes_details`
-- 执行简单 SQL 查询
+当前核心模型：
 
-#### `task_queue/priority_queue.py`
+- `CanonicalNode`
+- `CanonicalConnection`
+- `CanonicalNodeBundle`
 
-负责：
+### 3.3 服务层
 
-- Redis ZSET 优先级队列
-- Redis SET 去重
-- 批量入队
-- 批量锁控制
+目录：
 
-#### `utils/batch_manager.py`
+- `src/link_scraper/services/fetch_service.py`
+- `src/link_scraper/services/parse_service.py`
+- `src/link_scraper/services/sync_service.py`
+- `src/link_scraper/services/ods_service.py`
 
-负责：
+职责：
 
-- 生成批次号
-- 从 Redis/MySQL 恢复当前批次号
-- 将批次号写入 Redis
+- `NodeFetchService`：节点详情抓取
+- `NodeParseService`：把 source 结果映射为统一领域对象
+- `NodeSyncService`：协调图节点、关系、维表更新
+- `OdsWriteService`：构建并写入 ODS 明细
 
-## 3. 关键执行流程
+### 3.4 仓储层
 
-### 3.1 应用启动流程
+目录：
 
-`main.py` 启动阶段顺序如下：
+- `src/link_scraper/repositories/records.py`
+- `src/link_scraper/repositories/mappers.py`
+- `src/link_scraper/repositories/graph_repository.py`
+- `src/link_scraper/repositories/dim_node_repository.py`
+- `src/link_scraper/repositories/ods_repository.py`
 
-1. 调用 `Settings.load()` 读取配置
-2. 初始化 Redis 客户端
-3. 初始化 Redis 优先级队列
-4. 初始化 Neo4j 连接和唯一约束
-5. 初始化 MySQL 连接
-6. 初始化 `RateLimiter`
-7. 初始化 `BatchManager`
+职责：
+
+- 定义持久化 record
+- 将 canonical model 映射到图/维表/ODS 的存储对象
+- 为服务层屏蔽底层 manager 的技术细节
+
+### 3.5 存储管理层
+
+目录：
+
+- `src/link_scraper/database/mysql_manager.py`
+- `src/link_scraper/database/neo4j_manager.py`
+
+当前主用命名：
+
+- `RelationalStorageManager`
+- `GraphStorageManager`
+
+兼容别名仍保留：
+
+- `MySQLManager`
+- `Neo4jManager`
+
+职责：
+
+- 维护数据库连接与底层执行
+- 承接 repository 的写入请求
+- 兼容旧模型输入与新 record 输入
+
+### 3.6 Worker 与扫描层
+
+目录：
+
+- `src/link_scraper/scrapers/snapshot_scanner.py`
+- `src/link_scraper/scrapers/api_worker.py`
+
+当前主用命名：
+
+- `SnapshotScanner`
+- `NodeIngestionWorker`
+
+兼容别名仍保留：
+
+- `APIWorker`
+
+职责：
+
+- `SnapshotScanner` 负责在线节点快照扫描、MySQL 连接数更新、批量入队
+- `NodeIngestionWorker` 负责消费 Redis 队列并编排服务调用
+
+## 4. 当前主流程
+
+### 4.1 启动流程
+
+`main.py` 当前启动顺序如下：
+
+1. `Settings.load()` 读取配置
+2. 初始化 Redis 客户端与优先级队列
+3. 初始化 `GraphStorageManager`
+4. 初始化 `RelationalStorageManager`
+5. 初始化 `RateLimiter`
+6. 初始化 `BatchManager`
+7. 通过 `build_source_components()` 构造 source client / parser / mapper
 8. 初始化 `SnapshotScanner`
-9. 初始化 `APIWorker`
-10. 将当前批次号设置到 `APIWorker`
+9. 初始化 repositories
+10. 初始化 `NodeFetchService` / `NodeParseService` / `NodeSyncService` / `OdsWriteService`
+11. 初始化 `NodeIngestionWorker`
 
-### 3.2 主调度流程
+### 4.2 运行流程
 
-`Neo4jScraperApp.start()` 的核心逻辑是：
+当前仍然采用“队列清空后再触发新扫描”的调度策略：
 
-1. 启动 `APIWorker.start()` 作为后台任务
-2. 持续检查 Redis 队列大小
-3. 如果队列为空：
-   - 清空旧任务集合
-   - 触发一次 `SnapshotScanner.scan_and_update()`
-   - 读取新的批次号并设置到 `APIWorker`
-   - 睡眠 1800 秒
-4. 如果队列不为空：
-   - 睡眠 10 秒后继续检查
+1. 后台启动 `NodeIngestionWorker.start()`
+2. 主循环检查 Redis 队列大小
+3. 队列为空时触发 `SnapshotScanner.scan_and_update()`
+4. 快照扫描完成后，Worker 继续消费队列
+5. 队列再次清空后，进入下一轮扫描
 
-当前程序不是固定按时间扫全量，而是“队列清空后再触发下一轮快照扫描”。
+### 4.3 快照扫描流程
 
-### 3.3 快照扫描流程
+`SnapshotScanner.scan_and_update()` 当前真实流程：
 
-`SnapshotScanner.scan_and_update()` 流程如下：
+1. 获取或生成新的 `batch_no`
+2. 通过 source client 获取节点列表
+3. 通过 source mapper 提取 `node_id + link_count`
+4. 批量更新 `dim_nodes.current_link_count / last_seen / is_active`
+5. 将 `link_count > 1` 的节点按优先级批量入 Redis
 
-1. 从 `BatchManager` 获取或生成新的批次号
-2. 创建 `aiohttp.ClientSession`
-3. 请求 `node_list_url`
-4. 从返回的 DataTables 风格 JSON 中提取：
-   - `node_id`
-   - `link_count`
-5. 批量更新 MySQL `dim_nodes`：
-   - `current_link_count`
-   - `last_seen`
-   - `is_active`
-6. 过滤出 `link_count > 1` 的节点
-7. 通过 `RedisPriorityQueue.batch_enqueue()` 批量入队
-
-### 3.4 当前优先级规则
-
-当前优先级分数直接使用连接数：
+当前优先级规则：
 
 - `priority = link_count`
 
-连接数越大，出队优先级越高。
+### 4.4 队列消费流程
 
-### 3.5 节点详情抓取流程
+`NodeIngestionWorker.process_queue()` 当前真实流程：
 
-`APIWorker.process_queue()` 流程如下：
+1. 速率限制校验
+2. 从 Redis 队列取一个节点 ID
+3. 随机延迟
+4. 调 `NodeFetchService` 拉取详情
+5. 调 `NodeParseService` 生成 `CanonicalNodeBundle`
+6. 调 `NodeSyncService` 写入 Neo4j 和 `dim_nodes`
+7. 调 `OdsWriteService` 写入 `ods_nodes_details`
 
-1. 检查速率限制器是否允许发起请求
-2. 从 Redis 队列中取一个节点 ID
-3. 在最小/最大延迟之间随机睡眠
-4. 请求 `base_url/{node_id}`
-5. 成功后进入 `_update_databases()`
+## 5. 当前关键设计说明
 
-### 3.6 重试与限流
+### 5.1 当前只对 AllStarLink 做真实实现
 
-节点详情请求具备以下机制：
+虽然主流程已经支持 `SOURCE_NAME` 和 source factory，但当前有效实现仍然只有：
 
-- 速率限制：`RateLimiter`
-- 最大重试次数：`api.max_retries`
-- 指数退避：`retry_backoff ** attempt`
-- HTTP 429 冷却：`cooldown_429`
+- `allstarlink`
 
-### 3.7 落库流程
+`other_source` 只是骨架目录，用于验证 Phase 4 的接入边界已经具备。
 
-`APIWorker._update_databases()` 的执行顺序如下：
+### 5.2 当前保留兼容层
 
-1. 校验 `stats` 是否存在
-2. 使用 `NodeParser.parse_node()` 解析主节点
-3. 给主节点设置 `batch_no`
-4. 更新主节点 Neo4j 节点
-5. 读取 `linkedNodes`
-6. 逐个解析子节点并先写入 Neo4j
-7. 解析连接关系
-8. 写入 Neo4j `CONNECTED_TO` 关系
-9. 再次更新子节点 Neo4j，使用保留统计字段的策略
-10. 更新主节点 MySQL `dim_nodes`
-11. 更新子节点 MySQL `dim_nodes`，但不更新 `current_link_count`
-12. 构建 `OdsNodeDetail`
-13. 写入 MySQL `ods_nodes_details`
+为了避免一次性硬切导致回归风险，当前仍保留以下兼容层：
 
-## 4. API 返回数据讲解
+- `models/` 下旧模型
+- `scrapers/node_parser.py` 兼容包装层
+- `APIWorker` / `MySQLManager` / `Neo4jManager` 旧命名别名
 
-### 4.1 在线节点列表接口
+这些兼容层当前仍可用，但主流程已经优先走新结构。
 
-当前代码使用的接口：
+### 5.3 Neo4j 仍采用批次实例化
 
-- `http://stats.allstarlink.org/api/stats/nodeList`
-
-请求方式：
-
-- `POST`
-
-当前代码假定返回 JSON 中包含 `data` 数组，且每一行是一个列表。
-
-代码实际只使用：
-
-- 第一列中的节点链接或节点文本
-- 最后一列的连接数
-
-#### 4.1.1 提取方式
-
-从每一行数据中：
-
-1. 从第一列字符串中用正则匹配 `/stats/(\d+)`
-2. 如果匹配失败，则退化为取第一个空格前文本
-3. 最后一列如果是数字，则作为 `link_count`
-
-最终转换为：
-
-```json
-{
-  "node_id": 2105,
-  "link_count": 5
-}
-```
-
-### 4.2 节点详情接口
-
-当前代码使用的接口：
-
-- `https://stats.allstarlink.org/api/stats/{node_id}`
-
-返回数据中，代码重点关注以下结构：
-
-```json
-{
-  "stats": {
-    "data": {
-      "apprptuptime": "240706",
-      "totalkeyups": "21",
-      "totaltxtime": "92",
-      "apprptvers": "3.7.1",
-      "timeouts": "0",
-      "seqno": "9645",
-      "totalexecdcommands": "0",
-      "nodes": "T520580,T56001,T61672",
-      "linkedNodes": []
-    },
-    "user_node": {
-      "name": 2105,
-      "callsign": "KJ7OMO",
-      "node_frequency": "PRIDE Multi-mode HUB",
-      "node_tone": "kimberlychase.com",
-      "ipaddr": "209.222.4.140",
-      "is_nnx": "No",
-      "access_webtransceiver": "1",
-      "access_telephoneportal": "1",
-      "access_functionlist": "0",
-      "access_reverseautopatch": "1",
-      "server": {
-        "Server_Name": "2105-PRIDE-HUB",
-        "SiteName": "Pride Radio Network Hub",
-        "Affiliation": "Pride Radio Network",
-        "Latitude": "40.5545",
-        "Logitude": "-74.4601",
-        "Location": "Cloud 69",
-        "udpport": 4569
-      }
-    }
-  }
-}
-```
-
-### 4.3 主节点数据说明
-
-主节点数据主要来自：
-
-- `stats.user_node`
-- `stats.user_node.server`
-- `stats.data`
-
-代码直接使用的字段包括：
-
-来自 `stats.user_node`：
-
-- `name`
-- `callsign`
-- `node_frequency`
-- `node_tone`
-- `User_ID`
-- `ipaddr`
-- `is_nnx`
-- `access_webtransceiver`
-- `access_telephoneportal`
-- `access_functionlist`
-- `access_reverseautopatch`
-
-来自 `stats.user_node.server`：
-
-- `Affiliation`
-- `Server_Name`
-- `SiteName`
-- `Latitude`
-- `Logitude`
-- `Location`
-- `udpport`
-
-来自 `stats.data`：
-
-- `apprptuptime`
-- `totalkeyups`
-- `totaltxtime`
-- `seqno`
-- `timeouts`
-- `totalexecdcommands`
-- `apprptvers`
-- `nodes`
-- `linkedNodes`
-
-### 4.4 子节点数据说明
-
-子节点数据来自：
-
-- `stats.data.linkedNodes`
-
-当前代码对 `linkedNodes` 的处理策略是：
-
-- 解析出节点 ID、呼号、位置、硬件类型等基础信息
-- 如果缺少完整统计信息，则不伪造真实统计值
-
-因此当前代码中，子节点占位节点可能具有以下特征：
-
-- `apprptuptime = null`
-- `total_keyups = null`
-- `total_tx_time = null`
-- `connections = null`
-
-只有当该节点后续被当作主节点抓取时，才会补全真实统计数据。
-
-### 4.5 连接模式字段 `stats.data.nodes`
-
-`stats.data.nodes` 是一个字符串，例如：
+Neo4j 唯一标识仍然是：
 
 ```text
-T520580,T56001,T61672
+unique_id = "{node_id}_{batch_no}"
 ```
 
-每一段前缀代表连接方向：
+这意味着拓扑图仍然是按批次隔离的快照图，而不是单节点滚动覆盖图。
 
-- `T` -> `Transceive`
-- `R` -> `RX Only`
-- `L` -> `Local`
-- `P` -> `Permanent`
+### 5.4 子节点仍采用“先占位，后补全”策略
 
-当前代码使用 `NodeParser._parse_connection_modes()` 将其解析成字典映射。
+当前子节点如果缺失统计数据：
 
-## 5. 当前代码的重要行为说明
+- 会写 `null`
+- 不会伪造 `0`
 
-### 5.1 批次号机制
+当该节点后续被当作主节点抓取时，再补齐真实统计信息。
 
-批次号格式：
+## 6. 联调结论
 
-- `yyyymmddHH + 6位序号`
+截至 2026-03-13，已经完成一轮真实依赖联调验证。
 
-示例：
+已验证通过的内容：
 
-- `2026031314000068`
+- 初始化 Redis / MySQL / Neo4j / source
+- 执行一次快照扫描
+- 节点批量入队
+- 消费队列中的节点详情任务
 
-作用：
+联调过程中还修复了两个真实问题：
 
-- 区分同一节点在不同抓取批次中的实例
-- 作为 Neo4j `unique_id` 的组成部分
-- 写入 ODS 明细表
+1. `SnapshotScanner` 批量更新 SQL 中使用了错误变量
+2. `RelationalStorageManager.execute_query()` 对 DML 语句返回值判断不正确
 
-### 5.2 子节点占位策略
+## 7. 当前建议阅读顺序
 
-当前代码允许先创建子节点占位节点，再等待其自身被主节点抓取时补全数据。
-
-这意味着：
-
-- 图中可能已经存在某节点和大量关系
-- 但该节点统计字段仍为空
-
-这不是抓取错误，而是当前设计下的中间状态。
-
-### 5.3 当前不再使用的逻辑
-
-旧版 `SnapshotScanner` 中的 `_cleanup_offline_nodes()` 离线清理逻辑已经删除，不再属于当前主流程。
-
-## 6. 建议阅读顺序
-
-如果要快速理解当前代码，建议按这个顺序阅读：
+如果要理解当前代码，建议按以下顺序阅读：
 
 1. `src/link_scraper/main.py`
-2. `src/link_scraper/scrapers/snapshot_scanner.py`
-3. `src/link_scraper/scrapers/api_worker.py`
-4. `src/link_scraper/scrapers/node_parser.py`
-5. `src/link_scraper/database/neo4j_manager.py`
-6. `src/link_scraper/database/mysql_manager.py`
-7. `src/link_scraper/task_queue/priority_queue.py`
-8. `src/link_scraper/utils/batch_manager.py`
+2. `src/link_scraper/sources/base.py`
+3. `src/link_scraper/sources/factory.py`
+4. `src/link_scraper/sources/allstarlink/`
+5. `src/link_scraper/domain/models.py`
+6. `src/link_scraper/repositories/`
+7. `src/link_scraper/services/`
+8. `src/link_scraper/scrapers/snapshot_scanner.py`
+9. `src/link_scraper/scrapers/api_worker.py`
+10. `src/link_scraper/database/`
 
+## 8. 当前剩余工作
+
+当前结构性重构已经基本完成，剩余重点是：
+
+1. 持续弱化旧兼容层
+2. 视需要增加更多集成测试
+3. 如果未来确定第二数据源，再把 `other_source` 从骨架推进为真实实现

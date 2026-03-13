@@ -1,390 +1,223 @@
 # 新版爬虫数据模型说明
 
-本文档以 `src/link_scraper` 当前代码为准，聚焦新版爬虫中的领域模型定义，以及 Neo4j / MySQL 的当前使用方式。
+本文档以当前 `src/link_scraper` 代码为准，描述重构后真实生效的数据模型分层。
 
-## 1. 领域模型总览
+## 1. 当前模型分层
 
-当前核心领域模型有三类：
+当前模型已经分成三层：
 
-- `Node`
-- `Connection`
-- `OdsNodeDetail`
+1. 旧兼容模型
+2. 统一领域模型
+3. 持久化 record 模型
 
-对应文件：
+## 2. 旧兼容模型
+
+目录：
 
 - `src/link_scraper/models/node.py`
 - `src/link_scraper/models/connection.py`
 - `src/link_scraper/models/ods_node_detail.py`
 
-## 2. Node 模型
+当前状态：
+
+- 仍然保留
+- 主要用于兼容旧代码路径
+- 不再是新主流程的中心模型
+
+说明：
+
+本轮重构后，新主流程已经优先使用 `domain/models.py` 与 `repositories/records.py`，旧模型处于兼容过渡期。
+
+## 3. 统一领域模型
 
 文件：
 
-- `src/link_scraper/models/node.py`
+- `src/link_scraper/domain/models.py`
 
-`Node` 表示一个业务节点，也对应 Neo4j 中的 `Node` 标签节点。
+### 3.1 `CanonicalNode`
 
-### 2.1 核心字段
+作用：
 
-- `node_id`: 节点 ID
-- `callsign`: 呼号
-- `node_type`: 平台类型，当前一般为 `allstarlink`
-- `lat`, `lon`: 经纬度
-- `apprptuptime`: 在线时长
-- `total_keyups`: 总 keyup 次数
-- `total_tx_time`: 总发射时长
-- `last_seen`: 最后一次抓取时间
-- `active`: 是否活跃
-- `updated_at`: 更新时间
-- `node_rank`: 节点类型标签，如 `Hub` / `Repeater`
-- `features`: 特征列表
-- `tone`: tone 数值
-- `location_desc`: 从 `node_tone` 推导出的业务描述
-- `hardware_type`: 硬件类型
-- `connections`: 连接数
-- `batch_no`: 当前批次号
-- `unique_id`: 节点唯一标识
+- 表示 source 无关的统一节点语义
+- 作为 source adapter 向系统内部传递的标准节点对象
 
-### 2.2 扩展字段
+特点：
 
-- `owner`
-- `affiliation`
-- `site_name`
-- `affiliation_type`
-- `country`
-- `continent`
-- `mobility_type`
-- `first_seen_at`
-- `is_mobile`
-- `app_version`
-- `is_bridge`
-- `access_webtransceiver`
-- `ip_address`
-- `timezone_offset`
-- `is_nnx`
-- `history_total_keyups`
-- `history_tx_time`
-- `access_telephoneportal`
-- `access_functionlist`
-- `access_reverseautopatch`
-- `seqno`
-- `timeout`
-- `totalexecdcommands`
+- 不直接绑定 MySQL 或 Neo4j 的具体列结构
+- 同时可表达主节点和子节点
+- 子节点缺失统计值时保留 `None`
 
-### 2.3 主节点与子节点的差异
+### 3.2 `CanonicalConnection`
 
-#### 主节点
+作用：
 
-由 `NodeParser.parse_node()` 生成，具备真实统计字段：
+- 表示统一的节点关系语义
 
-- `apprptuptime`
-- `total_keyups`
-- `total_tx_time`
-- `connections`
-
-#### 子节点
-
-由 `NodeParser.parse_linked_node()` 生成。
-
-当前代码策略是：
-
-- 如果 API 不提供完整统计信息，则这些字段设为 `None`
-- 不再用 `0` 作为伪默认值
-
-也就是说，子节点占位数据中，以下字段可能为空：
-
-- `apprptuptime`
-- `total_keyups`
-- `total_tx_time`
-- `connections`
-
-这表示“当前未知”，而不是“真实为 0”。
-
-### 2.4 校验规则
-
-`Node.validate()` 当前要求：
-
-- `node_id` 必须存在
-- 经纬度必须合法
-- `last_seen <= updated_at`
-- `total_keyups` 如果不为空，不能小于 0
-- `total_tx_time` 如果不为空，不能小于 0
-
-## 3. Connection 模型
-
-文件：
-
-- `src/link_scraper/models/connection.py`
-
-`Connection` 表示节点之间的一条拓扑关系。
-
-### 3.1 字段定义
+当前关键字段语义：
 
 - `source_id`
 - `target_id`
-- `status`
 - `direction`
-- `last_updated`
-- `active`
+- `status`
 - `batch_no`
 
-### 3.2 status 取值
+### 3.3 `CanonicalNodeBundle`
 
-- `Active`
-- `Inactive`
+作用：
 
-### 3.3 direction 取值
+- 表示一次节点详情抓取得到的聚合结果
 
-- `Transceive`
-- `RX Only`
-- `Local`
-- `Permanent`
-- `Unknown`
+当前包含：
 
-## 4. OdsNodeDetail 模型
+- 主节点
+- 子节点列表
+- 连接关系列表
+- 原始 payload
+
+说明：
+
+`CanonicalNodeBundle` 是当前服务层和 mapper 层之间的核心交换对象。
+
+## 4. 持久化 record 模型
 
 文件：
 
-- `src/link_scraper/models/ods_node_detail.py`
+- `src/link_scraper/repositories/records.py`
 
-`OdsNodeDetail` 表示写入 `ods_nodes_details` 的一条节点详情快照。
+### 4.1 `GraphNodeRecord`
 
-### 4.1 核心字段
+作用：
 
-- `node_id`
-- `node_type`
-- `callsign`
-- `frequency`
-- `tone`
-- `affiliation`
-- `site_name`
-- `is_active`
-- `last_seen`
-- `latitude`
-- `longitude`
-- `app_version`
-- `ip`
-- `timezone_offset`
-- `is_nnx`
-- `total_keyups`
-- `total_tx_time`
-- `access_webtransceiver`
-- `access_telephoneportal`
-- `access_functionlist`
-- `access_reverseautopatch`
-- `seqno`
-- `timeout`
-- `apprptuptime`
-- `total_execd_commands`
-- `max_uptime`
-- `current_link_count`
-- `linked_nodes`
-- `links`
-- `port`
-- `batch_no`
+- Neo4j 节点写入对象
 
-### 4.2 JSON 字段说明
+特点：
 
-当前 ODS 模型中有两个复合结构字段：
+- 显式包含图节点写入所需字段
+- 包含 `batch_no`
+- 包含 `unique_id`
 
-- `linked_nodes`
-- `links`
+### 4.2 `GraphConnectionRecord`
 
-当前写库策略：
+作用：
 
-- `linked_nodes`: 保存 `stats.data.linkedNodes` 的 JSON 序列化结果
-- `links`: 保存 `stats.data.nodes` 原始字符串，并在写库前用 `json.dumps()` 转成合法 JSON 字符串
+- Neo4j `CONNECTED_TO` 关系写入对象
 
-这样可以兼容 MySQL 的 JSON 列要求。
+特点：
 
-## 5. Neo4j 模型
+- 绑定 `src_unique_id` 与 `dst_unique_id`
+- 关系隔离到具体批次
 
-## 5.1 Node 标签
+### 4.3 `DimNodeRecord`
 
-当前代码写入的节点标签：
+作用：
 
-- `Node`
+- MySQL `dim_nodes` 更新对象
 
-### 5.1.1 当前写入的属性
+特点：
 
-- `unique_id`
-- `node_id`
-- `callsign`
-- `node_type`
-- `lat`
-- `lon`
-- `apprptuptime`
-- `total_keyups`
-- `total_tx_time`
-- `last_seen`
-- `active`
-- `updated_at`
-- `node_rank`
-- `features`
-- `tone`
-- `location_desc`
-- `hardware_type`
-- `siteName`
-- `connections`
-- `batch_no`
+- 只保留维表更新真正需要的字段
+- 子节点更新时可显式跳过部分字段覆盖
 
-### 5.1.2 唯一约束
+### 4.4 `OdsNodeDetailRecord`
 
-当前唯一明确创建的约束：
+作用：
 
-- `:Node(unique_id)` 唯一约束
+- MySQL `ods_nodes_details` 插入对象
 
-### 5.1.3 唯一标识规则
+特点：
 
-当前节点唯一标识是：
+- 保存主节点详情快照
+- 保留 `linked_nodes`
+- 保留 `links`
+- 包含 `batch_no`
+
+## 5. 模型转换链路
+
+当前主流程的数据转换链路是：
+
+```text
+AllStarLink payload
+-> CanonicalNodeBundle
+-> GraphNodeRecord / GraphConnectionRecord / DimNodeRecord / OdsNodeDetailRecord
+-> Neo4j / MySQL
+```
+
+对应实现位置：
+
+- source 映射：`src/link_scraper/sources/allstarlink/mapper.py`
+- record 映射：`src/link_scraper/repositories/mappers.py`
+
+## 6. 当前 Mapper 职责
+
+### 6.1 Source Mapper
+
+文件：
+
+- `src/link_scraper/sources/allstarlink/mapper.py`
+
+职责：
+
+- 将 AllStarLink 列表接口映射为 `node_id + link_count`
+- 将 AllStarLink 详情接口映射为 `CanonicalNodeBundle`
+
+### 6.2 Repository Mapper
+
+文件：
+
+- `src/link_scraper/repositories/mappers.py`
+
+当前主要 mapper：
+
+- `GraphMapper`
+- `DimNodeMapper`
+- `OdsMapper`
+
+职责：
+
+- 将 `CanonicalNodeBundle` 或其中的 canonical 对象映射为各类存储 record
+
+## 7. 当前关键建模约束
+
+### 7.1 子节点统计缺失时必须写 `null`
+
+当前已经明确采用以下策略：
+
+- 子节点缺失统计字段时，保留 `None`
+- 不再使用伪 `0`
+
+这同时适用于 canonical model 和最终 record。
+
+### 7.2 `ods_nodes_details.links` 的来源固定
+
+当前 `links` 字段的业务来源固定为：
+
+- `stats.data.nodes`
+
+由于 MySQL 列类型是 JSON，写入前会做 JSON 序列化。
+
+注意：
+
+- 这里保存的是“JSON 字符串值”
+- 不是解析后的 JSON 数组
+
+### 7.3 Neo4j 仍然采用批次化节点实例
+
+当前图节点唯一标识规则仍然是：
 
 ```text
 unique_id = "{node_id}_{batch_no}"
 ```
 
-这意味着同一节点在不同批次中会生成不同的图节点实例。
+因此：
 
-## 5.2 CONNECTED_TO 关系
+- 同一业务节点在不同批次会产生不同图节点实例
+- 关系同样按批次隔离
 
-当前关系标签：
+## 8. 当前仍未完成的建模项
 
-- `CONNECTED_TO`
+虽然模型已经完成拆分，但还有两个建模项暂未推进：
 
-### 5.2.1 当前写入的属性
+1. 占位节点与完整节点的显式状态字段
+2. 更彻底地淘汰旧 `models/` 下的兼容模型
 
-- `status`
-- `direction`
-- `last_updated`
-- `active`
-- `batch_no`
-
-### 5.2.2 批次隔离
-
-关系更新基于 `src_unique_id` 和 `dst_unique_id`，也就是同一批次内的节点实例。
-
-因此当前拓扑图是按批次隔离的。
-
-## 6. MySQL 模型
-
-## 6.1 dim_nodes
-
-当前代码对 `dim_nodes` 的使用方式：
-
-- `SnapshotScanner` 批量更新在线节点连接数
-- `APIWorker` 更新主节点和子节点的部分字段
-
-### 6.1.1 当前明确写入的字段
-
-- `node_id`
-- `access_webtransceiver`
-- `ip_address`
-- `timezone_offset`
-- `is_nnx`
-- `history_total_keyups`
-- `history_tx_time`
-- `access_telephoneportal`
-- `access_functionlist`
-- `access_reverseautopatch`
-- `seqno`
-- `timeout`
-- `totalexecdcommands`
-- `apprptuptime`
-- `site_name`
-- `current_link_count`
-- `node_type`
-- `last_seen`
-- `is_active`
-
-### 6.1.2 当前写入规则
-
-主节点更新：
-
-- 会更新 `current_link_count`
-- 会更新 `apprptuptime`
-
-子节点更新：
-
-- 不更新 `current_link_count`
-- 如果 `apprptuptime` 为空，则不覆盖原值
-
-## 6.2 ods_nodes_details
-
-当前代码对 `ods_nodes_details` 的使用方式：
-
-- 每成功抓取一个主节点详情，就插入一条快照记录
-
-这是“只插入，不更新”的 ODS 明细表。
-
-### 6.2.1 当前插入字段
-
-- `node_id`
-- `node_type`
-- `callsign`
-- `frequency`
-- `tone`
-- `affiliation`
-- `site_name`
-- `is_active`
-- `last_seen`
-- `latitude`
-- `longitude`
-- `app_version`
-- `ip`
-- `timezone_offset`
-- `is_nnx`
-- `total_keyups`
-- `total_tx_time`
-- `access_webtransceiver`
-- `access_telephoneportal`
-- `access_functionlist`
-- `access_reverseautopatch`
-- `seqno`
-- `timeout`
-- `apprptuptime`
-- `total_execd_commands`
-- `max_uptime`
-- `current_link_count`
-- `linked_nodes`
-- `links`
-- `port`
-- `batch_no`
-
-## 7. 当前模型设计的关键特点
-
-### 7.1 批次化图模型
-
-Neo4j 当前不是“单节点滚动更新”模型，而是“按批次实例化”的图模型：
-
-- 同一个 `node_id`
-- 在不同 `batch_no`
-- 会生成不同 `unique_id`
-
-优点：
-
-- 可以保留批次快照
-- 便于回放某一批次拓扑
-
-代价：
-
-- 图中会出现同一业务节点的多份实例
-
-### 7.2 子节点先占位，后补全
-
-当前代码允许：
-
-1. 先通过别人 `linkedNodes` 把某节点创建出来
-2. 再在该节点自己被抓取时补全真实统计值
-
-因此查询图数据时，应区分：
-
-- 占位子节点
-- 已被完整抓取的主节点
-
-### 7.3 MySQL 与 Neo4j 的分工
-
-当前分工大致如下：
-
-- Neo4j：拓扑关系、批次图结构
-- `dim_nodes`：节点当前状态的部分字段
-- `ods_nodes_details`：节点详情快照明细
-
+也就是说，当前系统已经从“全能 Node”迁移出来，但尚未把“数据完整度状态”正式建模。

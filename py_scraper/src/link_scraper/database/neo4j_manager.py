@@ -8,19 +8,20 @@ Neo4j数据库管理器
 """
 
 import logging
-from typing import List, Optional
+from typing import List, Optional, Union
 from datetime import datetime
 from neo4j import AsyncGraphDatabase
 from .base import BaseDatabaseManager
 from ..models.node import Node
 from ..models.connection import Connection
+from ..repositories.records import GraphConnectionRecord, GraphNodeRecord
 from ..config.constants import STALE_RELATIONSHIP_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
 
-class Neo4jManager(BaseDatabaseManager):
-    """Neo4j数据库管理器
+class GraphStorageManager(BaseDatabaseManager):
+    """图数据库管理器
 
     职责：
     - 管理数据库连接
@@ -86,46 +87,58 @@ class Neo4jManager(BaseDatabaseManager):
             logger.error(f"初始化Neo4j约束失败: {e}")
             raise
 
-    async def update_node(self, node: Node, preserve_counters: bool = False, preserve_uptime: bool = False) -> None:
+    async def update_node(
+        self,
+        node: Union[Node, GraphNodeRecord],
+        preserve_counters: bool = False,
+        preserve_uptime: bool = False,
+    ) -> None:
         """更新节点数据到Neo4j
 
         Args:
             node: 要更新的节点对象
         """
-        if not node.validate():
-            logger.warning(f"节点数据验证失败，跳过更新: {node.node_id}")
-            return
+        if isinstance(node, GraphNodeRecord):
+            if not node.validate():
+                logger.warning(f"图节点record验证失败，跳过更新: {node.node_id}")
+                return
+            unique_id = node.unique_id
+            properties = node.to_properties()
+            node_id = node.node_id
+            batch_no = node.batch_no
+        else:
+            if not node.validate():
+                logger.warning(f"节点数据验证失败，跳过更新: {node.node_id}")
+                return
+            unique_id = f"{node.node_id}_{node.batch_no}"
+            properties = {
+                'unique_id': unique_id,
+                'node_id': node.node_id,
+                'callsign': node.callsign,
+                'node_type': node.node_type,
+                'lat': node.lat,
+                'lon': node.lon,
+                'apprptuptime': node.apprptuptime,
+                'total_keyups': node.total_keyups,
+                'total_tx_time': node.total_tx_time,
+                'last_seen': node.last_seen.isoformat() if node.last_seen else None,
+                'active': node.active,
+                'updated_at': node.updated_at.isoformat() if node.updated_at else None,
+                'node_rank': node.node_rank,
+                'features': node.features,
+                'tone': node.tone,
+                'location_desc': node.location_desc,
+                'hardware_type': node.hardware_type,
+                'siteName': node.site_name,
+                'connections': node.connections,
+                'batch_no': node.batch_no
+            }
+            node_id = node.node_id
+            batch_no = node.batch_no
 
         try:
             async with self.driver.session() as session:
-                # 生成unique_id：node_id_batch_no
-                unique_id = f"{node.node_id}_{node.batch_no}"
-                
-                properties = {
-                    'unique_id': unique_id,
-                    'node_id': node.node_id,
-                    'callsign': node.callsign,
-                    'node_type': node.node_type,
-                    'lat': node.lat,
-                    'lon': node.lon,
-                    'apprptuptime': node.apprptuptime,
-                    'total_keyups': node.total_keyups,
-                    'total_tx_time': node.total_tx_time,
-                    'last_seen': node.last_seen.isoformat() if node.last_seen else None,
-                    'active': node.active,
-                    'updated_at': node.updated_at.isoformat() if node.updated_at else None,
-                    'node_rank': node.node_rank,
-                    'features': node.features,
-                    'tone': node.tone,
-                    'location_desc': node.location_desc,
-                    'hardware_type': node.hardware_type,
-                    'siteName': node.site_name,
-                    'connections': node.connections,
-                    'batch_no': node.batch_no
-                }
-
-                # 使用MERGE确保节点存在（基于unique_id），然后更新属性
-                # 同一节点在不同批次会有多个实例，通过unique_id区分
+                # 使用 MERGE 确保同一批次同一节点只保留一个图实例。
                 if preserve_counters:
                     create_properties = properties.copy()
                     match_properties = properties.copy()
@@ -167,33 +180,39 @@ class Neo4jManager(BaseDatabaseManager):
                         ON MATCH SET n = $properties
                         """
                         await session.run(query, unique_id=unique_id, properties=properties)
-                logger.debug(f"节点 {node.node_id} (批次{node.batch_no}) 数据已更新到Neo4j")
+                logger.debug(f"节点 {node_id} (批次{batch_no}) 数据已更新到Neo4j")
         except Exception as e:
-            logger.error(f"更新节点 {node.node_id} 到Neo4j失败: {e}")
+            logger.error(f"更新节点 {node_id} 到Neo4j失败: {e}")
             raise
 
-    async def update_topology(self, node_id: str, connections: List[Connection]) -> None:
-        """更新节点拓扑关系到Neo4j（批量操作）
-
-        Args:
-            node_id: 源节点ID
-            connections: 连接关系列表
-        """
+    async def update_topology(
+        self,
+        node_id: str,
+        connections: Union[List[Connection], List[GraphConnectionRecord]],
+    ) -> None:
+        """更新节点拓扑关系到Neo4j（批量操作）"""
         try:
             async with self.driver.session() as session:
                 current_time = datetime.now().isoformat()
 
-                # 过滤无效连接
-                valid_connections = [conn for conn in connections if conn.validate()]
-                if not valid_connections:
-                    logger.warning(f"节点 {node_id} 没有有效的连接关系")
-                    return
-
-                # 批量检查已存在的连接
-                connection_pairs = [
-                    (f"{node_id}_{conn.batch_no}", f"{conn.target_id}_{conn.batch_no}", conn)
-                    for conn in valid_connections
-                ]
+                if connections and isinstance(connections[0], GraphConnectionRecord):
+                    valid_connections = [conn for conn in connections if conn.validate()]
+                    if not valid_connections:
+                        logger.warning(f"节点 {node_id} 没有有效的连接关系")
+                        return
+                    connection_pairs = [
+                        (conn.src_unique_id, conn.dst_unique_id, conn)
+                        for conn in valid_connections
+                    ]
+                else:
+                    valid_connections = [conn for conn in connections if conn.validate()]
+                    if not valid_connections:
+                        logger.warning(f"节点 {node_id} 没有有效的连接关系")
+                        return
+                    connection_pairs = [
+                        (f"{node_id}_{conn.batch_no}", f"{conn.target_id}_{conn.batch_no}", conn)
+                        for conn in valid_connections
+                    ]
 
                 # 批量查询所有连接对
                 check_query = """
@@ -207,18 +226,22 @@ class Neo4jManager(BaseDatabaseManager):
                 result = await session.run(
                     check_query,
                     pairs=[
-                        {"src_unique_id": src, "dst_unique_id": dst, "conn": {"status": conn.status, "active": conn.active, "batch_no": conn.batch_no}}
+                        {
+                            "src_unique_id": src,
+                            "dst_unique_id": dst,
+                            "conn": {
+                                "status": conn.status,
+                                "active": conn.active,
+                                "batch_no": conn.batch_no,
+                                "direction": getattr(conn, "direction", None),
+                            },
+                        }
                         for src, dst, conn in connection_pairs
                     ]
                 )
                 existing_connections = await result.data()
 
-                logger.debug(f"节点 {node_id}: 找到 {len(existing_connections)} 个已存在的连接")
-
-                # 提取已存在的连接对
                 existing_pairs = {(record["src_unique_id"], record["dst_unique_id"]) for record in existing_connections}
-
-                # 分离需要更新和需要创建的连接
                 to_update = [record for record in existing_connections]
                 to_create = [
                     (src, dst, conn)
@@ -226,9 +249,6 @@ class Neo4jManager(BaseDatabaseManager):
                     if (src, dst) not in existing_pairs and (dst, src) not in existing_pairs
                 ]
 
-                logger.debug(f"节点 {node_id}: 总共 {len(connection_pairs)} 个连接，需要更新 {len(to_update)} 个，需要创建 {len(to_create)} 个")
-
-                # 批量更新已存在的连接
                 if to_update:
                     update_query = """
                     UNWIND $updates AS update
@@ -252,13 +272,9 @@ class Neo4jManager(BaseDatabaseManager):
                         ],
                         last_updated=current_time
                     )
-                    # 等待更新操作完成
                     await result.consume()
-                    logger.debug(f"批量更新 {len(to_update)} 个已存在的连接")
 
-                # 批量创建新连接
                 if to_create:
-                    # 先检查所有要创建连接的节点是否存在
                     check_nodes_query = """
                     UNWIND $node_ids AS node_id
                     MATCH (n:Node {unique_id: node_id})
@@ -267,22 +283,13 @@ class Neo4jManager(BaseDatabaseManager):
                     all_node_ids = set([src for src, dst, conn in to_create] + [dst for src, dst, conn in to_create])
                     node_check_result = await session.run(check_nodes_query, node_ids=list(all_node_ids))
                     existing_nodes = set([record["node_id"] for record in await node_check_result.data()])
-                    
-                    # 找出不存在的节点
-                    missing_nodes = all_node_ids - existing_nodes
-                    if missing_nodes:
-                        logger.warning(f"节点 {node_id}: 以下节点不存在，无法创建连接: {missing_nodes}")
-                    
-                    # 过滤掉涉及不存在节点的连接
                     valid_to_create = [
                         (src, dst, conn)
                         for src, dst, conn in to_create
                         if src in existing_nodes and dst in existing_nodes
                     ]
-                    
-                    if not valid_to_create:
-                        logger.warning(f"节点 {node_id}: 没有有效的连接可以创建（所有涉及的节点都不存在）")
-                    else:
+
+                    if valid_to_create:
                         create_query = """
                         UNWIND $creates AS create
                         MATCH (src:Node {unique_id: create.src_unique_id})
@@ -309,13 +316,7 @@ class Neo4jManager(BaseDatabaseManager):
                             ],
                             last_updated=current_time
                         )
-                        # 等待创建操作完成
                         await result.consume()
-                        logger.info(f"批量创建 {len(valid_to_create)} 个新连接")
-                        if len(valid_to_create) < len(to_create):
-                            logger.warning(f"节点 {node_id}: 跳过了 {len(to_create) - len(valid_to_create)} 个连接，因为相关节点不存在")
-
-                logger.debug(f"节点 {node_id} 拓扑关系已更新: 更新 {len(to_update)} 个, 创建 {len(to_create)} 个")
         except Exception as e:
             logger.error(f"更新节点 {node_id} 拓扑关系失败: {e}")
             raise
@@ -427,5 +428,9 @@ class Neo4jManager(BaseDatabaseManager):
         except Exception as e:
             logger.error(f"删除节点 {unique_id} 失败: {e}")
             return False
+
+
+# 兼容旧命名，后续主流程逐步改用 GraphStorageManager。
+Neo4jManager = GraphStorageManager
 
 

@@ -31,11 +31,14 @@ if __name__ == '__main__':
 
     from link_scraper.config.settings import Settings
     from link_scraper.config.constants import QUEUE_KEY, TASK_SET_KEY
-    from link_scraper.database.neo4j_manager import Neo4jManager
-    from link_scraper.database.mysql_manager import MySQLManager
+    from link_scraper.database.neo4j_manager import GraphStorageManager
+    from link_scraper.database.mysql_manager import RelationalStorageManager
     from link_scraper.task_queue.priority_queue import RedisPriorityQueue
     from link_scraper.scrapers.snapshot_scanner import SnapshotScanner
-    from link_scraper.scrapers.api_worker import APIWorker
+    from link_scraper.scrapers.api_worker import NodeIngestionWorker
+    from link_scraper.repositories import DimNodeRepository, GraphRepository, OdsRepository
+    from link_scraper.services import NodeFetchService, NodeParseService, NodeSyncService, OdsWriteService
+    from link_scraper.sources.factory import SourceComponents, build_source_components
     from link_scraper.utils.logger import Logger
     from link_scraper.utils.rate_limiter import RateLimiter
     from link_scraper.utils.batch_manager import BatchManager
@@ -49,11 +52,14 @@ else:
     
     from link_scraper.config.settings import Settings
     from link_scraper.config.constants import QUEUE_KEY, TASK_SET_KEY
-    from link_scraper.database.neo4j_manager import Neo4jManager
-    from link_scraper.database.mysql_manager import MySQLManager
+    from link_scraper.database.neo4j_manager import GraphStorageManager
+    from link_scraper.database.mysql_manager import RelationalStorageManager
     from link_scraper.task_queue.priority_queue import RedisPriorityQueue
     from link_scraper.scrapers.snapshot_scanner import SnapshotScanner
-    from link_scraper.scrapers.api_worker import APIWorker
+    from link_scraper.scrapers.api_worker import NodeIngestionWorker
+    from link_scraper.repositories import DimNodeRepository, GraphRepository, OdsRepository
+    from link_scraper.services import NodeFetchService, NodeParseService, NodeSyncService, OdsWriteService
+    from link_scraper.sources.factory import SourceComponents, build_source_components
     from link_scraper.utils.logger import Logger
     from link_scraper.utils.rate_limiter import RateLimiter
     from link_scraper.utils.batch_manager import BatchManager
@@ -78,12 +84,20 @@ class Neo4jScraperApp:
         """
         self.config: Settings = config
         self.redis_client: Optional[redis.Redis] = None
-        self.neo4j_manager: Optional[Neo4jManager] = None
-        self.mysql_manager: Optional[MySQLManager] = None
+        self.graph_storage_manager: Optional[GraphStorageManager] = None
+        self.relational_storage_manager: Optional[RelationalStorageManager] = None
         self.priority_queue: Optional[RedisPriorityQueue] = None
         self.rate_limiter: Optional[RateLimiter] = None
         self.snapshot_scanner: Optional[SnapshotScanner] = None
-        self.api_worker: Optional[APIWorker] = None
+        self.node_ingestion_worker: Optional[NodeIngestionWorker] = None
+        self.source_components: Optional[SourceComponents] = None
+        self.fetch_service: Optional[NodeFetchService] = None
+        self.parse_service: Optional[NodeParseService] = None
+        self.sync_service: Optional[NodeSyncService] = None
+        self.ods_service: Optional[OdsWriteService] = None
+        self.graph_repository: Optional[GraphRepository] = None
+        self.dim_node_repository: Optional[DimNodeRepository] = None
+        self.ods_repository: Optional[OdsRepository] = None
         self.running: bool = False
 
     async def initialize(self) -> None:
@@ -111,24 +125,24 @@ class Neo4jScraperApp:
             await self.priority_queue.clear()
 
         # 初始化Neo4j管理器
-        self.neo4j_manager = Neo4jManager(
+        self.graph_storage_manager = GraphStorageManager(
             uri=self.config.neo4j.uri,
             user=self.config.neo4j.user,
             password=self.config.neo4j.password
         )
-        await self.neo4j_manager.connect()
-        await self.neo4j_manager.initialize()
+        await self.graph_storage_manager.connect()
+        await self.graph_storage_manager.initialize()
 
         # 初始化MySQL管理器
-        self.mysql_manager = MySQLManager(
+        self.relational_storage_manager = RelationalStorageManager(
             host=self.config.mysql.host,
             user=self.config.mysql.user,
             password=self.config.mysql.password,
             database=self.config.mysql.database,
             charset=self.config.mysql.charset
         )
-        await self.mysql_manager.connect()
-        await self.mysql_manager.initialize()
+        await self.relational_storage_manager.connect()
+        await self.relational_storage_manager.initialize()
 
         # 初始化速率限制器
         self.rate_limiter = RateLimiter(
@@ -139,29 +153,43 @@ class Neo4jScraperApp:
         # 初始化批次管理器
         self.batch_manager = BatchManager(self.redis_client)
         # 初始化批次号
-        current_batch_no = await self.batch_manager.initialize_batch_no(self.mysql_manager)
+        current_batch_no = await self.batch_manager.initialize_batch_no(self.relational_storage_manager)
         logger.info(f"初始化批次号: {current_batch_no}")
+
+        self.source_components = build_source_components(self.config.source_name, self.config.api)
+        self.graph_repository = GraphRepository(self.graph_storage_manager)
+        self.dim_node_repository = DimNodeRepository(self.relational_storage_manager)
+        self.ods_repository = OdsRepository(self.relational_storage_manager)
+        self.fetch_service = NodeFetchService(self.source_components.client)
+        self.parse_service = NodeParseService(self.source_components.mapper)
+        self.sync_service = NodeSyncService(self.graph_repository, self.dim_node_repository)
+        self.ods_service = OdsWriteService(self.ods_repository)
 
         # 初始化快照扫描器
         self.snapshot_scanner = SnapshotScanner(
             redis_queue=self.priority_queue,
-            mysql_manager=self.mysql_manager,
+            mysql_manager=self.relational_storage_manager,
             api_config=self.config.api,
-            batch_manager=self.batch_manager
+            batch_manager=self.batch_manager,
+            source_client=self.source_components.client,
+            source_mapper=self.source_components.mapper
         )
 
         # 初始化API工作者
-        self.api_worker = APIWorker(
+        self.node_ingestion_worker = NodeIngestionWorker(
             redis_queue=self.priority_queue,
-            neo4j_manager=self.neo4j_manager,
-            mysql_manager=self.mysql_manager,
             api_config=self.config.api,
-            rate_limiter=self.rate_limiter
+            rate_limiter=self.rate_limiter,
+            fetch_service=self.fetch_service,
+            parse_service=self.parse_service,
+            sync_service=self.sync_service,
+            ods_service=self.ods_service,
+            graph_repository=self.graph_repository,
         )
-        # 设置初始批次号到APIWorker
+        # 设置初始批次号到节点摄取编排器
         if current_batch_no:
-            self.api_worker.set_batch_no(current_batch_no)
-            logger.info(f"已设置初始批次号 {current_batch_no} 到APIWorker")
+            self.node_ingestion_worker.set_batch_no(current_batch_no)
+            logger.info(f"已设置初始批次号 {current_batch_no} 到NodeIngestionWorker")
 
         logger.info("Neo4j爬虫应用初始化完成")
 
@@ -174,7 +202,7 @@ class Neo4jScraperApp:
         self._setup_signal_handlers()
 
         # 启动API工作者
-        api_worker_task = asyncio.create_task(self.api_worker.start())
+        api_worker_task = asyncio.create_task(self.node_ingestion_worker.start())
 
         try:
             # 主循环：监控队列状态，触发快照扫描
@@ -190,13 +218,13 @@ class Neo4jScraperApp:
                     logger.info("触发新一轮节点列表扫描...")
                     # 触发一次快照扫描
                     await self.snapshot_scanner.scan_and_update()
-                    # 获取当前批次号并设置到APIWorker
+                    # 获取当前批次号并设置到节点摄取编排器
                     current_batch_no = self.snapshot_scanner.get_current_batch_no()
                     if current_batch_no:
-                        self.api_worker.set_batch_no(current_batch_no)
-                        logger.info(f"已设置批次号 {current_batch_no} 到APIWorker")
+                        self.node_ingestion_worker.set_batch_no(current_batch_no)
+                        logger.info(f"已设置批次号 {current_batch_no} 到NodeIngestionWorker")
                     else:
-                        logger.warning("未能获取批次号，APIWorker将使用None作为批次号")
+                        logger.warning("未能获取批次号，NodeIngestionWorker将使用None作为批次号")
 
                     # 等待半小时再检查
                     await asyncio.sleep(1800)
@@ -223,12 +251,15 @@ class Neo4jScraperApp:
             await self.redis_client.close()
 
         # 关闭Neo4j连接
-        if self.neo4j_manager:
-            await self.neo4j_manager.close()
+        if self.graph_storage_manager:
+            await self.graph_storage_manager.close()
 
         # 关闭MySQL连接
-        if self.mysql_manager:
-            await self.mysql_manager.close()
+        if self.relational_storage_manager:
+            await self.relational_storage_manager.close()
+
+        if self.source_components:
+            await self.source_components.client.close()
 
         logger.info("Neo4j爬虫应用已关闭")
 

@@ -64,6 +64,7 @@ class Settings:
     mysql: MySQLConfig
     api: APIConfig
     priority: PriorityConfig
+    source_name: str
 
     @classmethod
     def load(cls) -> 'Settings':
@@ -102,5 +103,6 @@ class Settings:
                 high=100,
                 normal=50,
                 low=10
-            )
+            ),
+            source_name=os.getenv('SOURCE_NAME', 'allstarlink').strip().lower() or 'allstarlink'
         )

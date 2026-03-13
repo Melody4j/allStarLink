@@ -7,20 +7,22 @@ MySQL数据库管理器
 3. 批量操作
 """
 
+import json
 import logging
-from typing import List, Optional
+from typing import List, Optional, Union
 from datetime import datetime
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import QueuePool
 from .base import BaseDatabaseManager
 from ..models.node import Node
 from ..models.ods_node_detail import OdsNodeDetail
+from ..repositories.records import DimNodeRecord, OdsNodeDetailRecord
 
 logger = logging.getLogger(__name__)
 
 
-class MySQLManager(BaseDatabaseManager):
-    """MySQL数据库管理器
+class RelationalStorageManager(BaseDatabaseManager):
+    """关系型数据库管理器
 
     职责：
     - 管理数据库连接池
@@ -97,12 +99,18 @@ class MySQLManager(BaseDatabaseManager):
             query: SQL查询语句
 
         Returns:
-            查询结果列表，如果查询失败则返回None
+            查询结果列表；对于无结果集的 DML 语句返回空列表；
+            真正执行失败时返回 None。
         """
         try:
             with self.engine.connect() as conn:
                 result = conn.execute(text(query))
-                # 将结果转换为字典列表
+                # UPDATE/INSERT/DELETE 这类语句没有结果集，不能再 fetchall。
+                # 这里统一返回空列表，避免把“执行成功但无返回行”误记成错误。
+                if not result.returns_rows:
+                    return []
+
+                # SELECT 语句才会走到这里，并被转换为字典列表。
                 columns = result.keys()
                 rows = result.fetchall()
                 return [dict(zip(columns, row)) for row in rows]
@@ -110,7 +118,11 @@ class MySQLManager(BaseDatabaseManager):
             logger.error(f"执行查询失败: {e}")
             return None
 
-    async def updateSingleNode(self, node: Node, update_current_link_count: bool = True) -> None:
+    async def updateSingleNode(
+        self,
+        node: Union[Node, DimNodeRecord],
+        update_current_link_count: bool = True,
+    ) -> None:
         """更新单个节点到MySQL
 
         使用UPDATE语法更新指定字段：
@@ -120,17 +132,113 @@ class MySQLManager(BaseDatabaseManager):
         Args:
             node: 要更新的节点对象
         """
-        if not node.validate():
-            logger.warning(f"节点数据验证失败，跳过更新: {node.node_id}")
-            return
+        if isinstance(node, DimNodeRecord):
+            if not node.validate():
+                logger.warning(f"维表record验证失败，跳过更新: {node.node_id}")
+                return
+            params = {
+                'node_id': node.node_id,
+                'node_type': node.node_type,
+                'callsign': node.callsign,
+                'frequency': '',
+                'tone': str(node.tone) if node.tone else None,
+                'owner': node.owner if node.owner else '',
+                'affiliation': node.affiliation if node.affiliation else '',
+                'site_name': node.site_name if node.site_name else '',
+                'features': ','.join(node.features) if node.features else None,
+                'affiliation_type': node.affiliation_type if node.affiliation_type else 'Personal',
+                'country': node.country if node.country else 'Unknown',
+                'continent': node.continent if node.continent else 'Unknown',
+                'is_active': 1 if node.active else 0,
+                'last_seen': node.last_seen,
+                'node_rank': node.node_rank if node.node_rank else 'Normal',
+                'mobility_type': node.mobility_type if node.mobility_type else 'Fixed',
+                'first_seen_at': node.first_seen_at if node.first_seen_at else node.last_seen,
+                'update_time': datetime.now(),
+                'latitude': node.lat,
+                'longitude': node.lon,
+                'location_desc': node.location_desc,
+                'is_mobile': 1 if node.is_mobile else 0,
+                'app_version': node.app_version if node.app_version else '',
+                'is_bridge': 1 if node.is_bridge else 0,
+                'access_webtransceiver': 1 if node.access_webtransceiver else 0,
+                'ip_address': node.ip_address if node.ip_address else '',
+                'timezone_offset': node.timezone_offset,
+                'is_nnx': 1 if node.is_nnx else 0,
+                'hardware_type': node.hardware_type,
+                'total_keyups': node.total_keyups,
+                'history_total_keyups': node.history_total_keyups if node.history_total_keyups is not None else 0,
+                'total_tx_time': node.total_tx_time,
+                'history_tx_time': node.history_tx_time if node.history_tx_time is not None else 0,
+                'access_telephoneportal': 1 if node.access_telephoneportal else 0,
+                'access_functionlist': 1 if node.access_functionlist else 0,
+                'access_reverseautopatch': 1 if node.access_reverseautopatch else 0,
+                'seqno': node.seqno if node.seqno is not None else 0,
+                'timeout': node.timeout if node.timeout is not None else 0,
+                'apprptuptime': node.apprptuptime,
+                'totalexecdcommands': node.totalexecdcommands if node.totalexecdcommands is not None else 0,
+                'current_link_count': node.current_link_count
+            }
+            node_id = node.node_id
+            node_type = node.node_type
+            callsign = node.callsign
+            connections = node.current_link_count
+            apprptuptime = node.apprptuptime
+        else:
+            if not node.validate():
+                logger.warning(f"节点数据验证失败，跳过更新: {node.node_id}")
+                return
+            params = {
+                'node_id': node.node_id,
+                'node_type': node.node_type,
+                'callsign': node.callsign,
+                'frequency': '',
+                'tone': str(node.tone) if node.tone else None,
+                'owner': node.owner if node.owner else '',
+                'affiliation': node.affiliation if node.affiliation else '',
+                'site_name': node.site_name if node.site_name else '',
+                'features': ','.join(node.features) if node.features else None,
+                'affiliation_type': node.affiliation_type if node.affiliation_type else 'Personal',
+                'country': node.country if node.country else 'Unknown',
+                'continent': node.continent if node.continent else 'Unknown',
+                'is_active': 1 if node.active else 0,
+                'last_seen': node.last_seen,
+                'node_rank': node.node_rank if node.node_rank else 'Normal',
+                'mobility_type': node.mobility_type if node.mobility_type else 'Fixed',
+                'first_seen_at': node.first_seen_at if node.first_seen_at else node.last_seen,
+                'update_time': datetime.now(),
+                'latitude': node.lat,
+                'longitude': node.lon,
+                'location_desc': node.location_desc,
+                'is_mobile': 1 if node.is_mobile else 0,
+                'app_version': node.app_version if node.app_version else '',
+                'is_bridge': 1 if node.is_bridge else 0,
+                'access_webtransceiver': 1 if node.access_webtransceiver else 0,
+                'ip_address': node.ip_address if node.ip_address else '',
+                'timezone_offset': node.timezone_offset,
+                'is_nnx': 1 if node.is_nnx else 0,
+                'hardware_type': node.hardware_type,
+                'total_keyups': node.total_keyups,
+                'history_total_keyups': node.history_total_keyups if node.history_total_keyups is not None else 0,
+                'total_tx_time': node.total_tx_time,
+                'history_tx_time': node.history_tx_time if node.history_tx_time is not None else 0,
+                'access_telephoneportal': 1 if node.access_telephoneportal else 0,
+                'access_functionlist': 1 if node.access_functionlist else 0,
+                'access_reverseautopatch': 1 if node.access_reverseautopatch else 0,
+                'seqno': node.seqno if node.seqno is not None else 0,
+                'timeout': node.timeout if node.timeout is not None else 0,
+                'apprptuptime': node.apprptuptime,
+                'totalexecdcommands': node.totalexecdcommands if node.totalexecdcommands is not None else 0,
+                'current_link_count': node.connections
+            }
+            node_id = node.node_id
+            node_type = node.node_type
+            callsign = node.callsign
+            connections = node.connections
+            apprptuptime = node.apprptuptime
 
         try:
-
-             
-                            
-
             with self.engine.connect() as conn:
-                # 开启事务
                 trans = conn.begin()
                 try:
                     set_clauses = [
@@ -149,7 +257,7 @@ class MySQLManager(BaseDatabaseManager):
                         "site_name = :site_name",
                         "node_type = :node_type"
                     ]
-                    if node.apprptuptime is not None:
+                    if apprptuptime is not None:
                         set_clauses.append("apprptuptime = :apprptuptime")
                     if update_current_link_count:
                         set_clauses.append("current_link_count = :current_link_count")
@@ -160,60 +268,14 @@ class MySQLManager(BaseDatabaseManager):
                     WHERE node_id = :node_id
                     """)
 
-                    conn.execute(stmt, {
-                        'node_id': node.node_id,
-                        'node_type': node.node_type,
-                        'callsign': node.callsign,
-                        'frequency': '',  # 从API获取
-                        'tone': str(node.tone) if node.tone else None,
-                        'owner': node.owner if node.owner else '',
-                        'affiliation': node.affiliation if node.affiliation else '',
-                        'site_name': node.site_name if node.site_name else '',
-                        'features': ','.join(node.features) if node.features else None,
-                        'affiliation_type': node.affiliation_type if node.affiliation_type else 'Personal',
-                        'country': node.country if node.country else 'Unknown',
-                        'continent': node.continent if node.continent else 'Unknown',
-                        'is_active': 1 if node.active else 0,
-                        'last_seen': node.last_seen,
-                        'node_rank': node.node_rank if node.node_rank else 'Normal',
-                        'mobility_type': node.mobility_type if node.mobility_type else 'Fixed',
-                        'first_seen_at': node.first_seen_at if node.first_seen_at else node.last_seen,
-                        'update_time': datetime.now(),
-                        'latitude': node.lat,
-                        'longitude': node.lon,
-                        'location_desc': node.location_desc,
-                        'is_mobile': 1 if node.is_mobile else 0,
-                        'app_version': node.app_version if node.app_version else '',
-                        'is_bridge': 1 if node.is_bridge else 0,
-                        'access_webtransceiver': 1 if node.access_webtransceiver else 0,
-                        'ip_address': node.ip_address if node.ip_address else '',
-                        'timezone_offset': node.timezone_offset,
-                        'is_nnx': 1 if node.is_nnx else 0,
-                        'hardware_type': node.hardware_type,
-                        'total_keyups': node.total_keyups,
-                        'history_total_keyups': node.history_total_keyups if node.history_total_keyups is not None else 0,
-                        'total_tx_time': node.total_tx_time,
-                        'history_tx_time': node.history_tx_time if node.history_tx_time is not None else 0,
-                        # 'avg_talk_length': avg_talk_length,
-                        'access_telephoneportal': 1 if node.access_telephoneportal else 0,
-                        'access_functionlist': 1 if node.access_functionlist else 0,
-                        'access_reverseautopatch': 1 if node.access_reverseautopatch else 0,
-                        'seqno': node.seqno if node.seqno is not None else 0,
-                        'timeout': node.timeout if node.timeout is not None else 0,
-                        'apprptuptime': node.apprptuptime,
-                        'totalexecdcommands': node.totalexecdcommands if node.totalexecdcommands is not None else 0,
-                        'current_link_count': node.connections
-                    })
-
-                    # 提交事务
+                    conn.execute(stmt, params)
                     trans.commit()
-                    logger.info(f"MySQL数据更新: 节点 {node.node_id} 数据已成功更新 - 类型:{node.node_type}, 呼号:{node.callsign}, 连接数:{node.connections}")
+                    logger.info(f"MySQL数据更新: 节点 {node_id} 数据已成功更新 - 类型:{node_type}, 呼号:{callsign}, 连接数:{connections}")
                 except Exception as e:
-                    # 回滚事务
                     trans.rollback()
                     raise
         except Exception as e:
-            logger.error(f"MySQL数据更新失败: 更新节点 {node.node_id} 异常 - {e}")
+            logger.error(f"MySQL数据更新失败: 更新节点 {node_id} 异常 - {e}")
             raise
 
     async def batch_upsert_nodes(self, nodes: List[Node]) -> None:
@@ -278,23 +340,61 @@ class MySQLManager(BaseDatabaseManager):
             logger.error(f"MySQL数据更新失败: 批量更新节点异常 - {e}")
             raise
 
-    async def insert_ods_node_detail(self, ods_detail: OdsNodeDetail) -> None:
+    async def insert_ods_node_detail(self, ods_detail: Union[OdsNodeDetail, OdsNodeDetailRecord]) -> None:
         """插入ODS节点详情到MySQL（纯插入策略，保留历史快照）
 
         Args:
             ods_detail: ODS节点详情对象
         """
-        if not ods_detail.validate():
-            logger.warning(f"ODS节点详情数据验证失败，跳过插入: {ods_detail.node_id}")
-            return
+        if isinstance(ods_detail, OdsNodeDetailRecord):
+            if not ods_detail.validate():
+                logger.warning(f"ODS record验证失败，跳过插入: {ods_detail.node_id}")
+                return
+            detail_dict = {
+                'node_id': ods_detail.node_id,
+                'node_type': ods_detail.node_type,
+                'callsign': ods_detail.callsign,
+                'frequency': ods_detail.frequency,
+                'tone': ods_detail.tone,
+                'affiliation': ods_detail.affiliation,
+                'site_name': ods_detail.site_name,
+                'is_active': 1 if ods_detail.is_active else 0 if ods_detail.is_active is not None else None,
+                'last_seen': ods_detail.last_seen,
+                'latitude': ods_detail.latitude,
+                'longitude': ods_detail.longitude,
+                'app_version': ods_detail.app_version,
+                'ip': ods_detail.ip,
+                'timezone_offset': ods_detail.timezone_offset,
+                'is_nnx': 1 if ods_detail.is_nnx else 0 if ods_detail.is_nnx is not None else None,
+                'total_keyups': ods_detail.total_keyups,
+                'total_tx_time': ods_detail.total_tx_time,
+                'access_webtransceiver': 1 if ods_detail.access_webtransceiver else 0 if ods_detail.access_webtransceiver is not None else None,
+                'access_telephoneportal': 1 if ods_detail.access_telephoneportal else 0 if ods_detail.access_telephoneportal is not None else None,
+                'access_functionlist': 1 if ods_detail.access_functionlist else 0 if ods_detail.access_functionlist is not None else None,
+                'access_reverseautopatch': 1 if ods_detail.access_reverseautopatch else 0 if ods_detail.access_reverseautopatch is not None else None,
+                'seqno': ods_detail.seqno,
+                'timeout': ods_detail.timeout,
+                'apprptuptime': ods_detail.apprptuptime,
+                'total_execd_commands': ods_detail.total_execd_commands,
+                'max_uptime': ods_detail.max_uptime,
+                'current_link_count': ods_detail.current_link_count,
+                'linked_nodes': json.dumps(ods_detail.linked_nodes) if ods_detail.linked_nodes else None,
+                'links': json.dumps(ods_detail.links) if ods_detail.links is not None else None,
+                'port': ods_detail.port,
+                'batch_no': int(ods_detail.batch_no) if ods_detail.batch_no is not None else None
+            }
+            ods_node_id = ods_detail.node_id
+        else:
+            if not ods_detail.validate():
+                logger.warning(f"ODS节点详情数据验证失败，跳过插入: {ods_detail.node_id}")
+                return
+            detail_dict = ods_detail.to_dict()
+            ods_node_id = ods_detail.node_id
 
         try:
             with self.engine.connect() as conn:
-                # 开启事务
                 trans = conn.begin()
                 try:
-                    # 记录批次号
-                    detail_dict = ods_detail.to_dict()
                     logger.debug(f"准备插入ODS节点详情，batch_no: {detail_dict.get('batch_no')}")
                     stmt = text("""
                     INSERT INTO ods_nodes_details
@@ -313,14 +413,16 @@ class MySQLManager(BaseDatabaseManager):
                      :current_link_count, :linked_nodes, :links, :port, :batch_no)
                     """)
 
-                    conn.execute(stmt, ods_detail.to_dict())
-                    # 提交事务
+                    conn.execute(stmt, detail_dict)
                     trans.commit()
-                    logger.info(f"MySQL数据插入: 节点 {ods_detail.node_id} ODS详情已成功插入（保留历史快照）")
+                    logger.info(f"MySQL数据插入: 节点 {ods_node_id} ODS详情已成功插入（保留历史快照）")
                 except Exception as e:
-                    # 回滚事务
                     trans.rollback()
                     raise
         except Exception as e:
-            logger.error(f"MySQL数据插入失败: 插入节点 {ods_detail.node_id} ODS详情异常 - {e}")
+            logger.error(f"MySQL数据插入失败: 插入节点 {ods_node_id} ODS详情异常 - {e}")
             raise
+
+
+# 兼容旧命名，后续主流程逐步改用 RelationalStorageManager。
+MySQLManager = RelationalStorageManager
