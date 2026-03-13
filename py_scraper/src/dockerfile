@@ -1,5 +1,5 @@
-# 使用Python 3.9作为基础镜像
-FROM python:3.9-slim
+# 使用 Python 3.11 作为基础镜像，兼容当前代码中的 3.10+ 类型注解语法
+FROM python:3.11-slim
 
 # 设置工作目录
 WORKDIR /app
@@ -11,9 +11,15 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     TZ=Asia/Shanghai
 
-# 使用阿里云镜像源
-RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list && \
-    sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list
+# 兼容新版 Debian slim 镜像的源配置文件位置
+RUN if [ -f /etc/apt/sources.list ]; then \
+        sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list && \
+        sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list; \
+    elif [ -f /etc/apt/sources.list.d/debian.sources ]; then \
+        sed -i 's|http://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g' /etc/apt/sources.list.d/debian.sources && \
+        sed -i 's|http://security.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources && \
+        sed -i 's|http://deb.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources; \
+    fi
 
 # 安装系统依赖（添加重试机制）
 RUN apt-get update --fix-missing && \
