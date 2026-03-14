@@ -6,29 +6,10 @@
 
 当前模型已经分成三层：
 
-1. 旧兼容模型
-2. 统一领域模型
-3. 持久化 record 模型
+1. 统一领域模型
+2. 持久化 record 模型
 
-## 2. 旧兼容模型
-
-目录：
-
-- `src/link_scraper/models/node.py`
-- `src/link_scraper/models/connection.py`
-- `src/link_scraper/models/ods_node_detail.py`
-
-当前状态：
-
-- 仍然保留
-- 主要用于兼容旧代码路径
-- 不再是新主流程的中心模型
-
-说明：
-
-本轮重构后，新主流程已经优先使用 `domain/models.py` 与 `repositories/records.py`，旧模型处于兼容过渡期。
-
-## 3. 统一领域模型
+## 2. 统一领域模型
 
 文件：
 
@@ -78,7 +59,7 @@
 
 `CanonicalNodeBundle` 是当前服务层和 mapper 层之间的核心交换对象。
 
-## 4. 持久化 record 模型
+## 3. 持久化 record 模型
 
 文件：
 
@@ -131,7 +112,7 @@
 - 保留 `links`
 - 包含 `batch_no`
 
-## 5. 模型转换链路
+## 4. 模型转换链路
 
 当前主流程的数据转换链路是：
 
@@ -147,7 +128,7 @@ AllStarLink payload
 - source 映射：`src/link_scraper/sources/allstarlink/mapper.py`
 - record 映射：`src/link_scraper/repositories/mappers.py`
 
-## 6. 当前 Mapper 职责
+## 5. 当前 Mapper 职责
 
 ### 6.1 Source Mapper
 
@@ -176,7 +157,7 @@ AllStarLink payload
 
 - 将 `CanonicalNodeBundle` 或其中的 canonical 对象映射为各类存储 record
 
-## 7. 当前关键建模约束
+## 6. 当前关键建模约束
 
 ### 7.1 子节点统计缺失时必须写 `null`
 
@@ -213,11 +194,10 @@ unique_id = "{node_id}_{batch_no}"
 - 同一业务节点在不同批次会产生不同图节点实例
 - 关系同样按批次隔离
 
-## 8. 当前仍未完成的建模项
+## 7. 当前仍未完成的建模项
 
 虽然模型已经完成拆分，但还有两个建模项暂未推进：
 
 1. 占位节点与完整节点的显式状态字段
-2. 更彻底地淘汰旧 `models/` 下的兼容模型
 
 也就是说，当前系统已经从“全能 Node”迁移出来，但尚未把“数据完整度状态”正式建模。

@@ -5,8 +5,12 @@
 import unittest
 from datetime import datetime
 
-from src.link_scraper.domain.models import CanonicalConnection, CanonicalNode, CanonicalNodeBundle
-from src.link_scraper.repositories.mappers import DimNodeMapper, GraphMapper, OdsMapper
+from src.link_scraper.modules.allstarlink.models.domain import (
+    CanonicalConnection,
+    CanonicalNode,
+    CanonicalNodeBundle,
+)
+from src.link_scraper.modules.allstarlink.mappers import DimNodeMapper, GraphMapper, OdsMapper
 
 
 class TestRepositoryMappers(unittest.TestCase):

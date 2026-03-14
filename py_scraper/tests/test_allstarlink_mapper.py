@@ -4,7 +4,11 @@ AllStarLink mapper 相关测试。
 
 import unittest
 
-from src.link_scraper.sources.allstarlink.mapper import AllStarLinkMapper
+from src.link_scraper.modules.allstarlink.models.payload import (
+    AslNodeDetailsPayload,
+    AslNodeOnlineListPayload,
+)
+from src.link_scraper.modules.allstarlink.source.mapper import AllStarLinkMapper
 
 
 def build_node_detail_payload() -> dict:
@@ -92,6 +96,22 @@ class TestAllStarLinkMapper(unittest.TestCase):
             ],
         )
 
+    def test_map_node_list_supports_payload_model(self) -> None:
+        mapper = AllStarLinkMapper()
+        payload = AslNodeOnlineListPayload.from_dict(
+            {
+                "data": [
+                    ['<a href="/stats/2105">2105</a>', "ignored", 5],
+                    ["1001 something", "ignored", "2"],
+                ]
+            }
+        )
+
+        result = mapper.map_node_list(payload)
+
+        self.assertEqual(result[0]["node_id"], 2105)
+        self.assertEqual(result[1]["link_count"], 2)
+
     def test_map_node_detail_builds_canonical_bundle(self) -> None:
         mapper = AllStarLinkMapper()
 
@@ -109,4 +129,15 @@ class TestAllStarLinkMapper(unittest.TestCase):
         self.assertEqual(len(bundle.connections), 2)
         self.assertEqual(bundle.connections[0].direction, "Transceive")
         self.assertEqual(bundle.connections[1].direction, "RX Only")
+
+    def test_map_node_detail_supports_payload_model(self) -> None:
+        mapper = AllStarLinkMapper()
+        payload = AslNodeDetailsPayload.from_dict(build_node_detail_payload())
+
+        bundle = mapper.map_node_detail(payload, batch_no="202603130001")
+
+        self.assertIsNotNone(bundle)
+        assert bundle is not None
+        self.assertEqual(bundle.primary_node.node_id, "2105")
+        self.assertEqual(bundle.raw_payload["stats"]["user_node"]["callsign"], "KJ7OMO")
 

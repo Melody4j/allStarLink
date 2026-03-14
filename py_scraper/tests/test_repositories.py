@@ -1,25 +1,31 @@
-"""
-仓储层测试。
-"""
+"""node_topology repository 测试。"""
 
 import unittest
-from unittest.mock import AsyncMock
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock
 
-from src.link_scraper.repositories import DimNodeRepository, GraphRepository, OdsRepository
-from src.link_scraper.repositories.records import (
+from src.link_scraper.modules.allstarlink.models.record import (
     DimNodeRecord,
     GraphConnectionRecord,
     GraphNodeRecord,
     OdsNodeDetailRecord,
 )
+from src.link_scraper.modules.allstarlink.repositories.node_topology_repository import (
+    NodeTopologyDimNodeRepository,
+    NodeTopologyGraphRepository,
+    NodeTopologyOdsRepository,
+)
 
 
 class TestRepositories(unittest.IsolatedAsyncioTestCase):
-    """验证 repository 是否正确委派到底层 manager。"""
-
-    async def test_graph_repository_delegates_calls(self) -> None:
+    async def test_graph_repository_builds_queries(self) -> None:
         neo4j_manager = AsyncMock()
-        repository = GraphRepository(neo4j_manager)
+        delete_summary = MagicMock()
+        delete_summary.counters.nodes_deleted = 1
+        neo4j_manager.execute_write.side_effect = [None, None, delete_summary]
+        neo4j_manager.execute_read.side_effect = [[], []]
+        repository = NodeTopologyGraphRepository(neo4j_manager)
+
         node = GraphNodeRecord(
             unique_id="2105_202603130001",
             node_id="2105",
@@ -49,27 +55,23 @@ class TestRepositories(unittest.IsolatedAsyncioTestCase):
             target_id="520580",
             status="Active",
             direction="Transceive",
-            last_updated=node.last_seen and __import__("datetime").datetime(2026, 3, 13, 10, 0, 0),
+            last_updated=datetime(2026, 3, 13, 10, 0, 0),
             active=True,
             batch_no="202603130001",
         )
 
         await repository.upsert_node(node, preserve_counters=True, preserve_uptime=True)
         await repository.upsert_topology("2105", [connection])
-        await repository.delete_node_by_unique_id("2105_202603130001")
+        deleted = await repository.delete_node_by_unique_id("2105_202603130001")
 
-        neo4j_manager.update_node.assert_awaited_once_with(
-            node,
-            preserve_counters=True,
-            preserve_uptime=True,
-        )
-        neo4j_manager.update_topology.assert_awaited_once_with("2105", [connection])
-        neo4j_manager.delete_node_by_unique_id.assert_awaited_once_with("2105_202603130001")
+        self.assertTrue(deleted)
+        self.assertEqual(neo4j_manager.execute_write.await_count, 3)
+        self.assertEqual(neo4j_manager.execute_read.await_count, 2)
 
-    async def test_dim_and_ods_repository_delegate_calls(self) -> None:
+    async def test_dim_and_ods_repository_execute_sql(self) -> None:
         mysql_manager = AsyncMock()
-        dim_repository = DimNodeRepository(mysql_manager)
-        ods_repository = OdsRepository(mysql_manager)
+        dim_repository = NodeTopologyDimNodeRepository(mysql_manager)
+        ods_repository = NodeTopologyOdsRepository(mysql_manager)
 
         dim_record = DimNodeRecord(
             node_id="2105",
@@ -84,7 +86,7 @@ class TestRepositories(unittest.IsolatedAsyncioTestCase):
             country=None,
             continent=None,
             active=True,
-            last_seen=__import__("datetime").datetime(2026, 3, 13, 10, 0, 0),
+            last_seen=datetime(2026, 3, 13, 10, 0, 0),
             node_rank="Hub",
             mobility_type=None,
             first_seen_at=None,
@@ -121,7 +123,7 @@ class TestRepositories(unittest.IsolatedAsyncioTestCase):
             affiliation="Pride Radio Network",
             site_name="Pride Radio Network Hub",
             is_active=True,
-            last_seen=__import__("datetime").datetime(2026, 3, 13, 10, 0, 0),
+            last_seen=datetime(2026, 3, 13, 10, 0, 0),
             latitude=40.5545,
             longitude=-74.4601,
             app_version="3.7.1",
@@ -149,9 +151,4 @@ class TestRepositories(unittest.IsolatedAsyncioTestCase):
         await dim_repository.update_node(dim_record, update_current_link_count=False)
         await ods_repository.insert_detail(ods_record)
 
-        mysql_manager.updateSingleNode.assert_awaited_once_with(
-            dim_record,
-            update_current_link_count=False,
-        )
-        mysql_manager.insert_ods_node_detail.assert_awaited_once_with(ods_record)
-
+        self.assertEqual(mysql_manager.execute_statement.await_count, 2)

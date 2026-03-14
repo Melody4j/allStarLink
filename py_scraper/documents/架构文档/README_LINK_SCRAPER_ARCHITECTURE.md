@@ -39,7 +39,6 @@ src/link_scraper/
 ├─ domain/
 │  ├─ models.py
 │  └─ __init__.py
-├─ models/                     # 旧模型，当前主要作为兼容层保留
 ├─ repositories/
 │  ├─ records.py
 │  ├─ mappers.py
@@ -49,8 +48,7 @@ src/link_scraper/
 │  └─ __init__.py
 ├─ scrapers/
 │  ├─ snapshot_scanner.py
-│  ├─ api_worker.py
-│  ├─ node_parser.py
+│  ├─ node_ingestion_worker.py
 │  └─ __init__.py
 ├─ services/
 │  ├─ fetch_service.py
@@ -176,32 +174,23 @@ worker -> services -> repositories -> managers
 - `RelationalStorageManager`
 - `GraphStorageManager`
 
-兼容别名仍保留：
-
-- `MySQLManager`
-- `Neo4jManager`
-
 职责：
 
 - 维护数据库连接与底层执行
 - 承接 repository 的写入请求
-- 兼容旧模型输入与新 record 输入
+- 承接基于 record 的写入输入
 
 ### 3.6 Worker 与扫描层
 
 目录：
 
 - `src/link_scraper/scrapers/snapshot_scanner.py`
-- `src/link_scraper/scrapers/api_worker.py`
+- `src/link_scraper/scrapers/node_ingestion_worker.py`
 
 当前主用命名：
 
 - `SnapshotScanner`
 - `NodeIngestionWorker`
-
-兼容别名仍保留：
-
-- `APIWorker`
 
 职责：
 
@@ -272,15 +261,15 @@ worker -> services -> repositories -> managers
 
 `other_source` 只是骨架目录，用于验证 Phase 4 的接入边界已经具备。
 
-### 5.2 当前保留兼容层
+### 5.2 兼容层已移除
 
-为了避免一次性硬切导致回归风险，当前仍保留以下兼容层：
+截至当前代码版本，以下兼容层已经从主线代码中移除：
 
 - `models/` 下旧模型
 - `scrapers/node_parser.py` 兼容包装层
 - `APIWorker` / `MySQLManager` / `Neo4jManager` 旧命名别名
 
-这些兼容层当前仍可用，但主流程已经优先走新结构。
+当前主流程已统一使用新命名与 canonical / record 模型。
 
 ### 5.3 Neo4j 仍采用批次实例化
 
@@ -329,13 +318,13 @@ unique_id = "{node_id}_{batch_no}"
 6. `src/link_scraper/repositories/`
 7. `src/link_scraper/services/`
 8. `src/link_scraper/scrapers/snapshot_scanner.py`
-9. `src/link_scraper/scrapers/api_worker.py`
+9. `src/link_scraper/scrapers/node_ingestion_worker.py`
 10. `src/link_scraper/database/`
 
 ## 8. 当前剩余工作
 
 当前结构性重构已经基本完成，剩余重点是：
 
-1. 持续弱化旧兼容层
+1. 显式建模节点完整度状态
 2. 视需要增加更多集成测试
 3. 如果未来确定第二数据源，再把 `other_source` 从骨架推进为真实实现
